@@ -241,74 +241,67 @@ def main() -> int:
         ok("macOS 上探测到字体（CI 验真）", len(fonts) > 0, "探测为空")
     print("     当前平台探测到 %d 个字体名" % len(fonts))
 
-    sec("9. 字体存在性判定（含降级路径的模糊匹配）")
-    from platform_fonts import _fuzzy_present
-    # 精确匹配由 resolve_font 内部处理，这里直接测模糊匹配这一层
-    ok("精确同形不做模糊也能命中（_norm）", _norm("Songti SC") == "songti sc")
-    # ★ 降级路径：目录扫描得到的是文件名（songti），要能匹配上家族名 Songti SC
-    ok("文件名 songti 能匹配 Songti SC",
-       _fuzzy_present("Songti SC", {"songti"}))
-    ok("文件名 heiti 能匹配 Heiti SC",
-       _fuzzy_present("Heiti SC", {"heiti"}))
-    ok("文件名 pingfang 能匹配 PingFang SC",
-       _fuzzy_present("PingFang SC", {"pingfang"}))
-    ok("文件名 kaiti 能匹配 Kaiti SC",
-       _fuzzy_present("Kaiti SC", {"kaiti"}))
-    # 短名不该乱命中
-    ok("短名不做模糊匹配（长度门槛）",
-       not _fuzzy_present("Kai", {"kaiti sc"}), "短名应被长度门槛挡住")
-    ok("无关字体不命中",
-       not _fuzzy_present("Songti SC", {"arial", "helvetica"}))
-
-    sec("10. 降级路径：目录扫描只拿到文件名时仍须解析出 macOS 家族名")
-    # ★ 踩过的坑（两层）：
-    #   1) 原实现在精确匹配那轮会因 Kaiti.ttc -> kaiti 与 Windows 名 KaiTi 撞名，
-    #      选中一个 Mac 上不存在的名字；
-    #   2) 只在模糊那轮修还不够——必须让「来源可靠的精确匹配」与
-    #      「来源不可靠只用模糊匹配」分开，并在不可靠时优先挑非精确命中的候选。
-    #   这段测试用 monkeypatch 在任意平台上验证该行为。
+    sec("9. 字体解析：精确匹配，以及降级路径的保守行为")
+    # ★ 这里只验证精确匹配。曾经为了「system_profiler 不可用、只扫到文件名」
+    #   的降级路径加过前缀模糊匹配（把 songti 认成 Songti SC），
+    #   但那套启发式本质上是在猜，连续引入两个错误：
+    #     kaiti（Kaiti.ttc 文件名）-> 被认成 Windows 名 KaiTi
+    #     times（Times New Roman.ttf）-> 被认成 Times
+    #   于是回退为「只精确匹配」。下面把这条设计决策固定成测试。
     import platform_fonts as _pf
     _orig_mac = _pf.is_macos
     _orig_inst = _pf.installed_fonts
-    _orig_rel = _pf.fonts_from_reliable_source
     try:
         _pf.is_macos = lambda: True
 
-        # A. 来源可靠：system_profiler 给出真实家族名
+        # A. system_profiler 正常：拿到真实家族名 -> 正确替换
         _pf.installed_fonts = lambda: {
             "songti sc", "heiti sc", "kaiti sc", "pingfang sc",
-            "stsong", "stheiti", "stfangsong",
+            "stsong", "stheiti", "stfangsong", "times new roman",
         }
-        _pf.fonts_from_reliable_source = lambda: True
-        # 注意：候选链里 STFangsong 排在 Kaiti SC 之前，所以仿宋应得 STFangsong
-        expect_a = {"宋体": "Songti SC", "黑体": "Heiti SC", "楷体": "Kaiti SC",
-                    "微软雅黑": "PingFang SC", "仿宋": "STFangsong"}
-        for role, want in expect_a.items():
+        expect = {"宋体": "Songti SC", "黑体": "Heiti SC", "楷体": "Kaiti SC",
+                  "微软雅黑": "PingFang SC", "仿宋_GB2312": "STFangsong",
+                  "Times New Roman": "Times New Roman"}
+        for role, want in expect.items():
             got = _pf.resolve_font(role)
-            ok("来源可靠 %s -> %s" % (role, want), got == want, "实际 %s" % got)
+            ok("精确匹配 %s -> %s" % (role, want), got == want, "实际 %s" % got)
 
-        # B. 来源不可靠：目录扫描只给文件名（songti / kaiti ...）
+        # B. 降级路径：只扫到文件名。精确匹配会命中一部分
+        #    （STSong / STHeiti 本身就是 macOS 真字体，命中是对的），
+        #    命中不了的保持原样。
+        #    契约：**绝不凭空发明字体名**——结果只能是原名或候选链里的某一项。
         _pf.installed_fonts = lambda: {
             "songti", "heiti", "kaiti", "pingfang", "stsong", "stheiti",
+            "times new roman",
         }
-        _pf.fonts_from_reliable_source = lambda: False
-        # 目录扫描拿不到 stfangsong（该字体在 Songti.ttc 内部），故仿宋落到 Kaiti SC
-        expect_b = {"宋体": "Songti SC", "黑体": "Heiti SC", "楷体": "Kaiti SC",
-                    "微软雅黑": "PingFang SC", "仿宋": "Kaiti SC"}
-        for role, want in expect_b.items():
+        from platform_fonts import FONT_ALIASES as _FA
+        invented = []
+        for role in ("宋体", "黑体", "楷体", "微软雅黑", "仿宋_GB2312",
+                     "Times New Roman", "思源宋体", "方正书宋"):
             got = _pf.resolve_font(role)
-            ok("来源不可靠 %s -> %s" % (role, want), got == want, "实际 %s" % got)
+            if got not in ({role} | set(_FA.get(role, []))):
+                invented.append((role, got))
+        ok("降级路径不会发明字体名（只能是原名或候选链里的）",
+           not invented, repr(invented))
 
-        # 反向检查：降级路径绝不能把 Windows 名留在结果里
-        win_names = {"宋体", "黑体", "楷体", "微软雅黑", "仿宋",
-                     "KaiTi", "SimSun", "SimHei", "FangSong"}
-        leaked = [(r, _pf.resolve_font(r)) for r in expect_b
-                  if _pf.resolve_font(r) in win_names]
-        ok("降级路径不残留 Windows 字体名", not leaked, repr(leaked))
+        # 命中就是命中：STSong / STHeiti 确实是 macOS 字体
+        ok("降级路径 宋体 命中链内 macOS 字体",
+           _pf.resolve_font("宋体") in _FA["宋体"],
+           "实际 %s" % _pf.resolve_font("宋体"))
+        # 未命中则保持原样
+        ok("降级路径 微软雅黑 保持原样",
+           _pf.resolve_font("微软雅黑") == "微软雅黑",
+           "实际 %s" % _pf.resolve_font("微软雅黑"))
+        got = _pf.resolve_font("Times New Roman")
+        ok("降级路径 Times New Roman 原样返回（不得变成 Times）",
+           got == "Times New Roman", "实际 %s" % got)
+
+        # C. 探测完全失败 -> 原样返回
+        _pf.installed_fonts = lambda: set()
+        ok("探测失败时宋体原样返回", _pf.resolve_font("宋体") == "宋体")
     finally:
         _pf.is_macos = _orig_mac
         _pf.installed_fonts = _orig_inst
-        _pf.fonts_from_reliable_source = _orig_rel
 
     sec("结果")
     print("  通过 %d 项，失败 %d 项" % (PASS, FAIL))

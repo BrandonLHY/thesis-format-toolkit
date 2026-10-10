@@ -74,47 +74,17 @@ def is_macos() -> bool:
 # ============================================================
 # 系统已安装字体探测
 # ============================================================
-# 记录字体名是从哪来的。用途见 fonts_from_reliable_source()。
-_FONTS_SOURCE: str = "unknown"
-
-
-def fonts_from_reliable_source() -> bool:
-    """当前字体名集合是否来自**可靠的**来源。
-
-    ★ 为什么需要这个判断
-    -------------------
-    macOS 上 `system_profiler` 不可用时（受限环境、CI runner、某些 MDM 策略），
-    `_fonts_macos()` 会退回扫描字体目录，此时只能拿到**文件名**：
-
-        Kaiti.ttc  -> kaiti
-        Songti.ttc -> songti
-
-    这些名字与字体家族名（Kaiti SC / Songti SC）不对应，更糟的是
-    `kaiti` 归一化后**恰好等于 Windows 字体名 `KaiTi`**，
-    于是在精确匹配那一轮就会命中，把一个 Mac 上根本不存在的字体名写进文档。
-
-    所以：来源不可靠时禁用精确匹配，只用保守的模糊匹配（前缀关系 + 长度门槛）。
-    """
-    return _FONTS_SOURCE != "dirscan"
-
-
 @functools.lru_cache(maxsize=1)
 def installed_fonts() -> set[str]:
     """返回系统已安装字体名集合（小写归一化）。探测失败时返回空集合，
-    此时 font_chain 会退回原字体名，行为等同改造前，不会更差。"""
-    global _FONTS_SOURCE
+    此时 resolve_font 会退回原字体名，行为等同改造前，不会更差。"""
     try:
         if sys.platform == "win32":
-            _FONTS_SOURCE = "registry"
             return _fonts_windows()
         if is_macos():
-            names, source = _fonts_macos()
-            _FONTS_SOURCE = source
-            return names
-        _FONTS_SOURCE = "fontconfig"
+            return _fonts_macos()
         return _fonts_fontconfig()
     except Exception:
-        _FONTS_SOURCE = "none"
         return set()
 
 
@@ -200,13 +170,20 @@ def parse_system_profiler_fonts(stdout: str) -> set[str]:
     return names
 
 
-def _fonts_macos() -> tuple[set[str], str]:
+def _fonts_macos() -> set[str]:
     """macOS：优先用 system_profiler 拿字体家族名，失败再退回文件扫描。
 
-    返回 (字体名集合, 来源标记)。来源标记取值：
-      "profiler" —— 来自 system_profiler，是真实字体家族名，可信
-      "dirscan"  —— 来自扫描字体目录的文件名，**不可信**（见 fonts_from_reliable_source）
-      "none"     —— 两条路都没拿到东西
+    ★ 退回扫描目录时拿到的是**文件名**，它与字体家族名并不对应
+    （Songti.ttc -> songti，家族名却是 Songti SC；Kaiti.ttc -> kaiti，
+    家族名是 Kaiti SC）。因此这种名字**匹配不上候选链里的家族名**，
+    结果是「不做字体替换」——这是有意的保守选择：
+
+      宁可保持原字体名（Word 自行回退，与改造前行为一致），
+      也不要凭猜测写入一个 Mac 上并不存在的字体名。
+
+    曾经试过用前缀模糊匹配把 songti 认成 Songti SC，但那套启发式
+    本质上是在猜，连续引入两个错误（kaiti 被认成 Windows 名 KaiTi、
+    times 被认成 Times），最后决定放弃。
     """
     names: set[str] = set()
     try:
@@ -217,11 +194,8 @@ def _fonts_macos() -> tuple[set[str], str]:
     except Exception:
         pass
     if names:
-        return names, "profiler"
-    # 退回：扫描字体目录里的文件名。
-    # 注意这些名字与字体家族名不对应（Songti.ttc -> songti），
-    # 且可能与 Windows 字体名撞名（Kaiti.ttc -> kaiti == KaiTi），
-    # 所以标记为 dirscan，调用方据此禁用精确匹配。
+        return names
+    # 退回：扫描字体目录里的文件名（不含 .ttc 内部家族名，聊胜于无）
     for d in ("/System/Library/Fonts", "/System/Library/Fonts/Supplemental",
               "/Library/Fonts", os.path.expanduser("~/Library/Fonts")):
         if not os.path.isdir(d):
@@ -230,7 +204,7 @@ def _fonts_macos() -> tuple[set[str], str]:
             for fn in files:
                 if fn.lower().endswith((".ttf", ".ttc", ".otf", ".dfont")):
                     names.add(_norm(os.path.splitext(fn)[0]))
-    return names, ("dirscan" if names else "none")
+    return names
 
 
 def _fonts_fontconfig() -> set[str]:
@@ -251,37 +225,6 @@ def _fonts_fontconfig() -> set[str]:
 # ============================================================
 # 字体名解析
 # ============================================================
-def _norm_key(s: str) -> str:
-    """归一化成比对用的键：小写并去掉空格、下划线、连字符。"""
-    return "".join(ch for ch in s.lower() if ch not in " _-")
-
-
-def _fuzzy_present(cand: str, have: set[str]) -> bool:
-    """保守的模糊匹配：候选名与系统里某个名字归一化后互为前缀。
-
-    只用于「退回扫描字体目录」的降级路径——那种情况下拿到的是**文件名**
-    （Songti.ttc -> songti），与字体家族名（Songti SC）并不一致，
-    只做精确匹配的话这条路径等于没用。
-
-    ★ 必须只在精确匹配全部失败后才调用。
-      踩过的坑：把它和精确匹配混在一轮里遍历候选链，会让 Windows 名
-      「KaiTi」因前缀关系抢在 macOS 名「Kaiti SC」前面被选中，
-      结果把一个 Mac 上不存在的字体名写进文档。
-
-    约束（避免误命中）：归一化后互为前缀，候选至少 5 字符、被比对名至少 4 字符。
-    """
-    key = _norm_key(cand)
-    if len(key) < 5:
-        return False
-    for h in have:
-        hk = _norm_key(h)
-        if len(hk) < 4:
-            continue
-        if hk.startswith(key) or key.startswith(hk):
-            return True
-    return False
-
-
 def resolve_font(name: str) -> str:
     """把逻辑字体名解析成当前系统真实存在的字体名。
 
@@ -291,9 +234,20 @@ def resolve_font(name: str) -> str:
       但 Windows 上「宋体」本来就能正常工作，没必要改动已验证的行为，
       改动只会引入不确定性。
 
-    解析顺序（严格分两轮，不可合并）：
-      第 1 轮 精确匹配：原名 -> 候选链依次精确匹配
-      第 2 轮 保守模糊匹配（仅在精确全部失败时）：应付目录扫描只拿到文件名的情况
+    只做**精确匹配**：原名在系统里 -> 原样返回；否则按候选链找第一个存在的。
+
+    ★ 为什么坚持精确匹配，不做模糊匹配
+    ----------------------------------
+    曾经为了「system_profiler 不可用、只能扫到文件名」的降级路径加过
+    前缀模糊匹配，想把 songti 认成 Songti SC。但那套启发式本质上是在猜，
+    连续引入两个错误：
+
+        kaiti（Kaiti.ttc 的文件名） -> 被认成 Windows 名 KaiTi
+        times（Times New Roman.ttf）-> 被认成 Times
+
+    最终结论：文件名与字体家族名之间没有可靠的对应关系，任何猜法都会错。
+    所以降级路径宁可不替换（Word 会自行回退，与改造前行为一致），
+    也不要写入一个系统里并不存在的字体名。
 
     * 非 macOS 平台 -> 原样返回
     * 探测失败 -> 原样返回（行为与改造前一致，不会更差）
@@ -305,35 +259,11 @@ def resolve_font(name: str) -> str:
     have = installed_fonts()
     if not have:
         return name
-    reliable = fonts_from_reliable_source()
 
-    # ---- 第 1 轮：精确匹配 ----
-    # ★ 仅在字体名来源可靠时启用。目录扫描（dirscan）拿到的文件名可能与
-    #   Windows 字体名撞名（Kaiti.ttc -> kaiti == KaiTi），
-    #   精确匹配会因此选中一个 Mac 上不存在的名字。
-    if reliable:
-        if _norm(name) in have:
-            return name
-        for cand in FONT_ALIASES.get(name, []):
-            if _norm(cand) in have:
-                return cand
-
-    # ---- 第 2 轮：保守模糊匹配（前缀关系 + 长度门槛）----
-    # ★ 来源不可靠时的额外规则：先试「没有精确命中」的候选。
-    #   理由：目录扫描给出的名字本身就是候选链里可能出现的东西
-    #   （Kaiti.ttc -> kaiti，与 Windows 名 KaiTi 撞名）。
-    #   若某个候选在集合里精确存在，很可能只是撞名，不是真的装了这个字体；
-    #   反过来，只靠前缀匹配上的「Kaiti SC」才是真实的字体家族名。
-    #   所以先挑「非精确命中」的，能拿到 Kaiti SC 而不是 KaiTi。
-    if not reliable:
-        for cand in FONT_ALIASES.get(name, []):
-            if _norm(cand) not in have and _fuzzy_present(cand, have):
-                return cand
-
-    if _fuzzy_present(name, have):
+    if _norm(name) in have:
         return name
     for cand in FONT_ALIASES.get(name, []):
-        if _fuzzy_present(cand, have):
+        if _norm(cand) in have:
             return cand
     return name
 

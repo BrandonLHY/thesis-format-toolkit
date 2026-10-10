@@ -65,12 +65,22 @@ SUITES = [
     "selftest_fontparse.py",
 ]
 
-# 模拟用的 macOS 字体名集合：只用官方确认随 macOS 出厂的字体
-MACOS_FONTS = [
+# 真实的 macOS 家族名（依据 Apple 官方「macOS 内置字体」清单）
+MACOS_FAMILY = [
     "songti sc", "heiti sc", "kaiti sc", "pingfang sc",
     "stsong", "stheiti", "stfangsong", "hiragino sans gb",
     "arial unicode ms", "times new roman", "arial",
     "helvetica neue", "courier new", "lisong pro", "lantinghei sc",
+]
+
+# 受限环境下退回扫描字体目录时只能拿到**文件名**。
+# 注意它们与家族名并不一致（Songti.ttc -> songti），
+# 这正是字体解析出错的根源，也是必须单独模拟这一模式的原因。
+MACOS_DIRSCAN = [
+    "songti", "heiti", "kaiti", "pingfang", "stsong", "stheiti",
+    "hiragino sans gb", "arial unicode ms", "times new roman", "arial",
+    "helvetica neue", "courier new", "lisong pro", "lantinghei sc",
+    "stix twotext",
 ]
 
 RUNNER_TEMPLATE = '''# -*- coding: utf-8 -*-
@@ -86,14 +96,22 @@ import platform_fonts as pf
 #   1) sys.platform —— 套件里有 sys.platform == "darwin" 的分支
 #   2) pf.is_macos() —— 库内部判断平台
 #   3) pf.installed_fonts() —— 决定字体替换能否发生
+#      真机 runner 上 system_profiler 往往失败、只能扫到文件名，
+#      所以两种情形都要模拟（见下面的 MODE）。
 sys.platform = "darwin"
 pf.is_macos = lambda: True
-pf._FONTS_SOURCE = "profiler"
 
-_FAKE = %(fonts)r
+MODE = %(mode)r
+_FAMILY = %(family)r      # system_profiler 给出的真实家族名
+_DIRSCAN = %(dirscan)r    # 扫描字体目录得到的文件名
+
+if MODE == "profiler":
+    _HAVE = set(_FAMILY)
+else:
+    _HAVE = set(_DIRSCAN)
 
 def _fake_fonts():
-    return set(_FAKE)
+    return set(_HAVE)
 
 # 必须保留 cache_clear：有套件会调用它
 _fake_fonts.cache_clear = lambda: None
@@ -105,52 +123,69 @@ runpy.run_path(os.path.join(HERE, target), run_name="__main__")
 '''
 
 
+MODE_LABEL = {
+    "profiler": "system_profiler 正常（拿到家族名）",
+    "dirscan": "system_profiler 失败、退回扫描目录（只有文件名）",
+}
+
+
 def main() -> int:
     tmpd = tempfile.mkdtemp(prefix="macsim_")
-    runner = os.path.join(tmpd, "_runner.py")
-    with open(runner, "w", encoding="utf-8") as f:
-        f.write(RUNNER_TEMPLATE % {"fonts": MACOS_FONTS, "here": HERE})
+    runners = {}
+    for mode in ("profiler", "dirscan"):
+        p = os.path.join(tmpd, "_runner_%s.py" % mode)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(RUNNER_TEMPLATE % {
+                "here": HERE, "mode": mode,
+                "family": MACOS_FAMILY, "dirscan": MACOS_DIRSCAN,
+            })
+        runners[mode] = p
 
     print("=" * 76)
     print("macOS 环境模拟自检")
     print("=" * 76)
-    print("在 %s 上模拟 macOS，跑 %d 个套件" % (sys.platform, len(SUITES)))
+    print("在 %s 上模拟 macOS，跑 %d 个套件 × %d 种环境"
+          % (sys.platform, len(SUITES), len(runners)))
+    print("  两种环境都要过：真机 runner 上 system_profiler 通常是失败的那种。")
     print()
 
-    bad: list[str] = []
-    for s in SUITES:
-        if not os.path.exists(os.path.join(HERE, s)):
-            print("  [跳过] %s（文件不存在）" % s)
-            continue
-        r = subprocess.run([sys.executable, runner, s], cwd=HERE,
-                           capture_output=True, text=True,
-                           encoding="utf-8", errors="replace")
-        if r.returncode == 0:
-            print("  [通过] %s" % s)
-            continue
-        print("  [失败] %s" % s)
-        lines = (r.stdout or "").splitlines()
-        shown = 0
-        for i, ln in enumerate(lines):
-            if "失败明细" in ln:
-                for x in lines[i + 1:i + 14]:
-                    if x.strip().startswith("✗"):
-                        print("         %s" % x.strip())
-                        shown += 1
-        if not shown and r.stderr:
-            print("         stderr: %s" % r.stderr.strip()[-300:])
-        bad.append(s)
+    bad: list[tuple[str, str]] = []
+    for mode, runner in runners.items():
+        print("--- 环境: %s" % MODE_LABEL[mode])
+        for s in SUITES:
+            if not os.path.exists(os.path.join(HERE, s)):
+                print("  [跳过] %s（文件不存在）" % s)
+                continue
+            r = subprocess.run([sys.executable, runner, s], cwd=HERE,
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+            if r.returncode == 0:
+                print("  [通过] %s" % s)
+                continue
+            print("  [失败] %s" % s)
+            lines = (r.stdout or "").splitlines()
+            shown = 0
+            for i, ln in enumerate(lines):
+                if "失败明细" in ln:
+                    for x in lines[i + 1:i + 14]:
+                        if x.strip().startswith("✗"):
+                            print("         %s" % x.strip())
+                            shown += 1
+            if not shown and r.stderr:
+                print("         stderr: %s" % r.stderr.strip()[-300:])
+            bad.append((mode, s))
+        print()
 
-    print()
     print("=" * 76)
     if bad:
-        print("结果: %d/%d 套件在 macOS 模拟下失败" % (len(bad), len(SUITES)))
-        print("      这些断言写死了 Windows 行为，需要按平台解析期望值：")
-        for s in bad:
-            print("        - %s" % s)
+        print("结果: %d 处失败" % len(bad))
+        print("      断言写死了 Windows 行为，需要按平台解析期望值：")
+        for mode, s in bad:
+            print("        - [%s] %s" % (mode, s))
         print("=" * 76)
         return 1
-    print("结果: 全部 %d 个套件在 macOS 模拟下通过" % len(SUITES))
+    total = len(SUITES) * len(runners)
+    print("结果: 全部 %d 项（%d 套件 × %d 环境）通过" % (total, len(SUITES), len(runners)))
     print("=" * 76)
     return 0
 
