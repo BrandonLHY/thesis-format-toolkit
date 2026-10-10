@@ -20,8 +20,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # macOS 用免费的标准 runner（公开仓库不收费）。
+        # 它的价值在于：可以真的执行 system_profiler 字体探测，
+        # 并交叉验证 tests/fixtures 里的录制夹具是否与真机结构一致。
+        # exclusions 用来避免跑太多组合、拉长排队时间。
+        os: [windows-latest, ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.12"]
+        exclude:
+          # macOS runner 排队慢，只跑一个 Python 版本就够
+          - os: macos-latest
+            python-version: "3.10"
 
     # Windows runner 的 stdout 默认编码是 cp1252，打印中文会抛
     # UnicodeEncodeError 并让脚本崩掉（实测踩过）。
@@ -49,7 +57,7 @@ jobs:
 
       # 验收检验：模拟全新用户走完整流程（依赖→造论文→识别→改写→核对）
       # 无图形显示的环境会自动跳过「界面构建」那一项（不是失败），
-      # 所以这个可以在两个平台上都跑。
+      # 所以这个可以在所有平台上都跑。
       - name: 验收检验
         run: python 验收检验.py
 
@@ -67,9 +75,20 @@ jobs:
       - name: 跨平台字体自检
         run: python selftest_platform.py
 
+      # 平台字体解析：含 macOS system_profiler 输出的录制回放。
+      # 在 Windows 上也能跑——这正是做录制回放的目的。
+      - name: 平台字体解析（含 macOS 录制回放）
+        run: python selftest_fontparse.py
+
+      # macOS 真机诊断：打印真实 system_profiler 结构，
+      # 用于交叉验证录制夹具没有脱离现实。非 macOS 会自行跳过。
+      - name: macOS 真机诊断
+        run: python selftest_macos_live.py
+
       # Ubuntu runner 没有 X 显示，tkinter 建窗口会失败。
-      # 「程序自检」里的界面项现在会自己探测并跳过，但为了不出意外，
-      # 仍把它限定在 Windows 上跑；Ubuntu 只跑不涉及显示的几套。
+      # 「程序自检」里的界面项会自己探测并跳过，但为了不出意外，
+      # 仍把它限定在 Windows 上跑。
+      # macOS runner 的 tkinter 也可能不可用（已知问题），故同样限制。
       - name: 程序自检（含 GUI 构建）
         if: runner.os == 'Windows'
         run: python main.py --selftest
@@ -80,5 +99,14 @@ jobs:
         with:
           name: 自检报告-${{ matrix.python-version }}
           path: 自检报告.txt
+          if-no-files-found: ignore
+
+      # macOS 诊断报告（真机 system_profiler 结构），失败时也上传便于排查
+      - name: 上传 macOS 诊断报告
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS诊断报告-${{ matrix.python-version }}
+          path: macOS诊断报告.txt
           if-no-files-found: ignore
 

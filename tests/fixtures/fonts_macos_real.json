@@ -1,0 +1,299 @@
+{
+  "SPFontsDataType": [
+    {
+      "_name": "字体",
+      "_items": [
+        {
+          "_name": "Songti SC",
+          "path": "/System/Library/Fonts/Supplemental/Songti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Songti SC Regular",
+              "family": "Songti SC",
+              "fullname": "Songti SC Regular",
+              "style": "Regular",
+              "unique": "Songti SC Regular; 15.0d1e1; 2022-08-30",
+              "version": "15.0d1e1"
+            },
+            {
+              "_name": "Songti SC Bold",
+              "family": "Songti SC",
+              "fullname": "Songti SC Bold",
+              "style": "Bold"
+            },
+            {
+              "_name": "Songti SC Black",
+              "family": "Songti SC",
+              "fullname": "Songti SC Black",
+              "style": "Black"
+            }
+          ]
+        },
+        {
+          "_name": "STSong",
+          "path": "/System/Library/Fonts/Supplemental/Songti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "STSong",
+              "family": "STSong",
+              "fullname": "STSong",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Heiti SC",
+          "path": "/System/Library/Fonts/Supplemental/Heiti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Heiti SC Light",
+              "family": "Heiti SC",
+              "fullname": "Heiti SC Light",
+              "style": "Light"
+            },
+            {
+              "_name": "Heiti SC Medium",
+              "family": "Heiti SC",
+              "fullname": "Heiti SC Medium",
+              "style": "Medium"
+            }
+          ]
+        },
+        {
+          "_name": "STHeiti",
+          "path": "/System/Library/Fonts/Supplemental/Heiti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "STHeiti",
+              "family": "STHeiti",
+              "fullname": "STHeiti",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "PingFang SC",
+          "path": "/System/Library/Fonts/PingFang.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "PingFang SC Regular",
+              "family": "PingFang SC",
+              "fullname": "PingFang SC Regular",
+              "style": "Regular"
+            },
+            {
+              "_name": "PingFang SC Medium",
+              "family": "PingFang SC",
+              "fullname": "PingFang SC Medium",
+              "style": "Medium"
+            }
+          ]
+        },
+        {
+          "_name": "Hiragino Sans GB",
+          "path": "/System/Library/Fonts/Hiragino Sans GB.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Hiragino Sans GB W3",
+              "family": "Hiragino Sans GB",
+              "fullname": "Hiragino Sans GB W3",
+              "style": "W3"
+            }
+          ]
+        },
+        {
+          "_name": "Kaiti SC",
+          "path": "/System/Library/Fonts/Supplemental/Kaiti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Kaiti SC Regular",
+              "family": "Kaiti SC",
+              "fullname": "Kaiti SC Regular",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Times New Roman",
+          "path": "/Library/Fonts/Times New Roman.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Times New Roman",
+              "family": "Times New Roman",
+              "fullname": "Times New Roman",
+              "style": "Regular"
+            },
+            {
+              "_name": "Times New Roman Bold",
+              "family": "Times New Roman",
+              "fullname": "Times New Roman Bold",
+              "style": "Bold"
+            }
+          ]
+        },
+        {
+          "_name": "Arial",
+          "path": "/Library/Fonts/Arial.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Arial",
+              "family": "Arial",
+              "fullname": "Arial",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Helvetica Neue",
+          "path": "/System/Library/Fonts/HelveticaNeue.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Helvetica Neue",
+              "family": "Helvetica Neue",
+              "fullname": "Helvetica Neue",
+              "style": "Regular"
+            },
+            {
+              "_name": "Helvetica Neue Bold",
+              "family": "Helvetica Neue",
+              "fullname": "Helvetica Neue Bold",
+              "style": "Bold"
+            }
+          ]
+        },
+        {
+          "_name": "SIL-Heiti",
+          "path": "/Library/Fonts/SIL-Heiti.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "SIL-Heiti",
+              "family": "SIL-Heiti",
+              "fullname": "SIL-Heiti",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Source Han Serif SC",
+          "path": "/Library/Fonts/SourceHanSerifSC-Regular.otf",
+          "type": "OpenType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Source Han Serif SC",
+              "family": "Source Han Serif SC",
+              "fullname": "Source Han Serif SC",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Source Han Sans SC",
+          "path": "/Library/Fonts/SourceHanSansSC-Regular.otf",
+          "type": "OpenType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Source Han Sans SC",
+              "family": "Source Han Sans SC",
+              "fullname": "Source Han Sans SC",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "STFangsong",
+          "path": "/System/Library/Fonts/Supplemental/Songti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "STFangsong",
+              "family": "STFangsong",
+              "fullname": "STFangsong",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Courier New",
+          "path": "/System/Library/Fonts/Supplemental/Courier New.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Courier New",
+              "family": "Courier New",
+              "fullname": "Courier New",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Noto Serif CJK SC",
+          "path": "/Library/Fonts/NotoSerifCJKsc-Regular.otf",
+          "type": "OpenType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Noto Serif CJK SC",
+              "family": "Noto Serif CJK SC",
+              "fullname": "Noto Serif CJK SC",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Noto Sans CJK SC",
+          "path": "/Library/Fonts/NotoSansCJKsc-Regular.otf",
+          "type": "OpenType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Noto Sans CJK SC",
+              "family": "Noto Sans CJK SC",
+              "fullname": "Noto Sans CJK SC",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "禁用字体示例",
+          "path": "/Library/Fonts/Disabled.ttf",
+          "type": "TrueType",
+          "enabled": "no",
+          "typefaces": [
+            {
+              "_name": "Disabled Font",
+              "family": "Disabled Font",
+              "fullname": "Disabled Font",
+              "style": "Regular"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

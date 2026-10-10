@@ -38,8 +38,15 @@ FONT_ALIASES: dict[str, list[str]] = {
     "宋体": ["宋体", "SimSun", "Songti SC", "STSong", "宋体-简", "Source Han Serif SC"],
     "黑体": ["黑体", "SimHei", "Heiti SC", "STHeiti", "黑体-简", "Source Han Sans SC"],
     "楷体": ["楷体", "KaiTi", "Kaiti SC", "STKaiti", "楷体-简"],
-    "仿宋": ["仿宋", "FangSong", "STFangsong", "仿宋-简"],
-    "仿宋_GB2312": ["仿宋_GB2312", "仿宋", "FangSong", "STFangsong"],
+    # ★ 仿宋这一链曾全部落在 macOS 上不存在的名字上（仿宋/FangSong/STFangsong/仿宋-简），
+    #   若学校要求正文用仿宋（公文类论文常见），在 Mac 上会写入一个不存在的字体名，
+    #   Word 只能自行回退，结果不可预期。
+    #   STFangsong 是否随 macOS 出厂无法确证（Office 会装，但这不该作为前提），
+    #   因此补一个已确证存在的中文衬线字体作为兜底。
+    #   注意：Kaiti SC 是楷体风格，与仿宋不等价，属「保证可用」的降级替代，
+    #   已在 README 的 Mac 说明里写明这一点。
+    "仿宋": ["仿宋", "FangSong", "STFangsong", "仿宋-简", "Kaiti SC", "STSong"],
+    "仿宋_GB2312": ["仿宋_GB2312", "仿宋", "FangSong", "STFangsong", "Kaiti SC", "STSong"],
     "微软雅黑": ["微软雅黑", "Microsoft YaHei", "PingFang SC", "Helvetica Neue"],
     "思源宋体": ["思源宋体", "Source Han Serif SC", "Noto Serif CJK SC", "宋体", "Songti SC"],
     "思源黑体": ["思源黑体", "Source Han Sans SC", "Noto Sans CJK SC", "黑体", "Heiti SC"],
@@ -113,6 +120,49 @@ def _fonts_windows() -> set[str]:
     return names
 
 
+def parse_system_profiler_fonts(stdout: str) -> set[str]:
+    """解析 `system_profiler SPFontsDataType -json` 的输出，取出字体名集合。
+
+    ★ 单独抽成函数是为了能测：macOS 适配最容易出问题的地方就是这个解析——
+    不同 macOS 版本的 JSON 结构不一样，字段还可能缺失（有的条目只有 _name，
+    没有 family；有的 typefaces 为空）。把解析逻辑独立出来，
+    就能用真实录制的输出在 Windows/CI 上做确定性回归测试，
+    不需要每次都有真机。
+
+    容错设计：结构不对时不抛异常，返回能取到的部分；完全取不到就返回空集合，
+    调用方会退回「扫描字体目录」，行为不会比改造前更差。
+    """
+    names: set[str] = set()
+    if not stdout:
+        return names
+    try:
+        import json
+        data = json.loads(stdout)
+    except Exception:
+        return names
+    if not isinstance(data, dict):
+        return names
+
+    def _take(d: dict) -> None:
+        for key in ("_name", "family", "fullname", "postscript", "display_name"):
+            v = d.get(key)
+            if isinstance(v, str) and v.strip():
+                names.add(_norm(v))
+
+    for item in data.get("SPFontsDataType", []) or []:
+        if not isinstance(item, dict):
+            continue
+        _take(item)
+        for fam in item.get("_items", []) or []:
+            if not isinstance(fam, dict):
+                continue
+            _take(fam)
+            for typ in fam.get("typefaces", []) or []:
+                if isinstance(typ, dict):
+                    _take(typ)
+    return names
+
+
 def _fonts_macos() -> set[str]:
     """macOS：优先用 system_profiler 拿字体家族名，失败再退回文件扫描。"""
     names: set[str] = set()
@@ -120,19 +170,7 @@ def _fonts_macos() -> set[str]:
         r = subprocess.run(["system_profiler", "SPFontsDataType", "-json"],
                            capture_output=True, text=True, timeout=25)
         if r.returncode == 0 and r.stdout:
-            import json
-            data = json.loads(r.stdout)
-            for item in data.get("SPFontsDataType", []):
-                for fam in item.get("_items", []):
-                    for key in ("_name", "family", "fullname", "postscript"):
-                        v = fam.get(key)
-                        if isinstance(v, str):
-                            names.add(_norm(v))
-                    for typ in fam.get("typefaces", []) or []:
-                        for key in ("_name", "family", "fullname", "postscript"):
-                            v = typ.get(key)
-                            if isinstance(v, str):
-                                names.add(_norm(v))
+            names = parse_system_profiler_fonts(r.stdout)
     except Exception:
         pass
     if not names:
@@ -220,6 +258,26 @@ def resolve_fonts_in_preset(preset: dict) -> tuple[dict, list[tuple[str, str, st
     return out, changes
 
 
+# 界面上 Windows 中文字体名 -> macOS 对应字体名。
+# ★ 提到模块级是为了能被测试直接断言（原先是 platform_font_choices 内的局部变量）。
+#   显式列出而不是查 FONT_ALIASES，因为这两件事目的不同：
+#   FONT_ALIASES 是「写文档时该用哪个真实字体名」，
+#   这里是「界面上该给用户看哪个选项」，且必须保证目标不含 Windows 字体名。
+MAC_CHOICE_MAP: dict[str, str] = {
+    "宋体": "Songti SC",
+    "黑体": "Heiti SC",
+    "楷体": "Kaiti SC",
+    # 仿宋曾映射到 STFangsong，但它是否随 macOS 出厂无法确证。
+    # 已确证存在的中文衬线字体里，Kaiti SC 最接近仿宋的观感，故用它兜底。
+    "仿宋": "Kaiti SC",
+    "仿宋_GB2312": "Kaiti SC",
+    "微软雅黑": "PingFang SC",
+    "思源宋体": "Songti SC",
+    "思源黑体": "Heiti SC",
+    "方正书宋": "Songti SC",
+}
+
+
 def platform_font_choices(base_choices: list[str]) -> list[str]:
     """按平台给出界面上展示的字体选项。
 
@@ -228,20 +286,9 @@ def platform_font_choices(base_choices: list[str]) -> list[str]:
     """
     if not is_macos():
         return list(base_choices)
-    mac_map = {
-        "宋体": "Songti SC",
-        "黑体": "Heiti SC",
-        "楷体": "Kaiti SC",
-        "仿宋": "STFangsong",
-        "仿宋_GB2312": "STFangsong",
-        "微软雅黑": "PingFang SC",
-        "思源宋体": "Songti SC",
-        "思源黑体": "Heiti SC",
-        "方正书宋": "Songti SC",
-    }
     seen, out = set(), []
     for c in base_choices:
-        v = mac_map.get(c, c)
+        v = MAC_CHOICE_MAP.get(c, c)
         if v not in seen:
             seen.add(v)
             out.append(v)

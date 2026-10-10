@@ -25,7 +25,7 @@ Word 论文的格式要求是几十条硬指标：一级标题四号黑体、正
 - **本地运行** —— 不联网、不上传任何内容
 - **格式可自定义** —— 字体字号在界面上改，不用动代码
 - **规范可替换** —— 换学校只需新增一个 JSON，程序不用改
-- **六套自检** —— 共 180 项，每次提交自动运行
+- **六套自检** —— 共 232 项，每次提交自动运行
 
 ---
 
@@ -47,9 +47,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
-需要 Python 3.10 或更高版本。代码本身是跨平台的（字体处理在 macOS 上会自动
-把「宋体」等 Windows 字体名替换成系统存在的 Songti SC 等），但目前只在 Windows 上
-做过完整验证与打包，macOS 未在真机验证。
+需要 Python 3.10 或更高版本。
+
+**macOS 也支持从源码运行**：字体处理会自动把「宋体」等 Windows 字体名
+替换成系统里存在的 Songti SC 等。每次提交都会在 GitHub Actions 的
+macOS 真机上跑一遍字体探测与文档处理检验（见下方「没有 Mac 电脑，怎么测 macOS 适配」）。
+
+不提供 Mac 成品下载——PyInstaller 无法跨平台打包，`.app` 只能在 Mac 上生成。
 
 ### 方式三：命令行
 
@@ -153,7 +157,8 @@ python report_html.py 论文.docx specs/sysu_undergraduate_thesis.json 报告.ht
 
 ## 自检
 
-**六套自检，共 180 项**，每次 push 由 CI 自动运行（Windows + Ubuntu × Python 3.10/3.12）。
+**六套自检，共 232 项**，每次 push 由 CI 自动运行
+（Windows + Ubuntu + macOS，Python 3.10/3.12）。
 
 ```bash
 python run_all_selftests.py     # 一键跑全部并汇总
@@ -166,8 +171,10 @@ python 验收检验.py                # 37 项：模拟全新用户走完整流�
 python selftest_adversarial.py   # 39 项：畸形输入的健壮性
 python selftest_fidelity.py      # 39 项：输出保真度与元数据保全
 python selftest_synthetic.py     # 36 项：假想论文端到端
-python selftest_platform.py      # 18 项：跨平台字体适配
+python selftest_platform.py      # 18 项：字体替换行为
+python selftest_fontparse.py     # 52 项：字体解析（含 macOS 录制回放）
 python main.py --selftest        # 11 项：依赖、GUI、端到端
+python selftest_macos_live.py    # macOS 真机诊断（非 macOS 自动跳过）
 ```
 
 ### 各套覆盖什么
@@ -176,10 +183,34 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 |---|---|
 | **验收检验** | 依赖 → 造论文 → 识别 → 改写 → 核对字体/编号/上标/文字完整性/原文件安全/GUI |
 | **对抗性 A** | 空文档、仅空白、段落无 run、超长标题、重复编号、表格内段落、含图片、项目符号列表、异常字号、坏样式引用、嵌套内容控件、**跨 run 上标**、全文单段、中英混排 |
-| **对抗性 B** | 文档属性、页眉页脚、书签、域代码、内容控件、分节属性、纸张尺寸、媒体文件、空段落保留、幂等性、预设生效性 |
+| **对抗性 B** | 文档属性、页眉页脚、书签、域代码、内容控件、分节属性、纸张尺寸、媒体文件、空段落保留、幂等性、预设生效性、**run 内换行节点与引用标记共存** |
 | **假想论文** | 纯文本段与有格式段、编号标题与无编号结构词、参考文献条目序号、全角括号、多引用区间、注释混排、年份区间、摘要标注同段 |
-| **跨平台字体** | 字体名不含逗号、Windows 不替换、模拟 macOS 替换、探测失败降级、界面选项 |
+| **跨平台字体** | 字体名不含逗号、Windows 不替换、模拟 macOS 替换、探测失败降级、界面选项、**macOS `system_profiler` 输出的录制回放**、中文字体角色在 macOS 上都有可用候选 |
 | **程序自检** | 打包后依赖完整、GUI 可构建、上标规则、端到端改写 |
+| **macOS 真机诊断** | 在 macOS 上打印真实 `system_profiler` 结构并与录制夹具交叉比对（不判分，只出报告） |
+
+### 没有 Mac 电脑，怎么测 macOS 适配
+
+macOS 适配的风险几乎全在**字体探测**上——`system_profiler SPFontsDataType -json`
+的输出结构在不同 macOS 版本间不完全一致，字段还可能缺失。这部分可以用两个办法覆盖：
+
+1. **录制回放**（`selftest_fontparse.py`，52 项）
+   把真实的 `system_profiler` 输出录下来存成 `tests/fixtures/fonts_macos_real.json`，
+   喂给解析函数做确定性断言。这样在 Windows 上也能测 macOS 的解析逻辑，
+   还额外覆盖了畸形输入（截断的 JSON、字段为 null、类型不对等 12 种）。
+
+2. **免费的真机 CI**（GitHub Actions 的 `macos-latest` runner）
+   公开仓库使用标准 runner 不收费。`selftest_macos_live.py` 会在真机上
+   打印真实的 JSON 结构，与夹具逐字段比对——**这样能确证夹具没有脱离现实**，
+   避免"用错的夹具测出假的通过"。
+
+**仍然测不到的**：字体名在 Mac 版 Word 里是否真能命中、界面在 Mac 上的实际外观、
+`.app` 打包（PyInstaller 不能跨平台打包，只能在 Mac 上做）。
+因此本项目对 macOS 的支持定位是**源码运行**，不提供 Mac 成品下载。
+
+**已知取舍**：`仿宋` 的候选链原本全部落在 macOS 上不存在的名字上
+（仿宋/FangSong/STFangsong/仿宋-简），已补上 `Kaiti SC` 兜底。
+但 Kaiti SC 是楷体风格，**与仿宋不等价**，属于"保证有字体可用"的降级替代。
 
 ### 自检实际发现过的缺陷
 
@@ -258,8 +289,9 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 ├── selftest_*.py            自检
 ├── run_all_selftests.py     一键跑全部自检
 ├── specs/                   格式规范（可扩展）
+├── tests/fixtures/          录制回放夹具（macOS 字体探测输出）
 ├── docs/                    打包与发布说明
-└── .github/workflows/       CI
+└── .github/workflows/       CI（Windows + Ubuntu + macOS）
 ```
 
 ---
@@ -269,7 +301,7 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 本项目在开发过程中使用了 **AI 编程助手（DeepSeek Harness）** 辅助实现。
 
 需求定义、产品形态设计、真实文档测试、问题定位与最终验收由作者完成。
-代码由**六套自检共 180 项**覆盖，并在多份真实论文上验证——
+代码由**六套自检共 232 项**覆盖，并在多份真实论文上验证——
 上表列出的每一项已知缺陷，都来自真实使用中暴露的问题。
 
 ---
@@ -310,7 +342,7 @@ python run_all_selftests.py
 
 ## 致谢
 
-**金辉** —— 独立复核时发现了一个 180 项自检都没覆盖的真缺陷：
+**金辉** —— 独立复核时发现了一个当时 175 项自检都没覆盖的真缺陷：
 上标切分 run 时会连带复制换行节点（`w:br`），导致含软回车与引用标记的段落
 渲染行数暴增。
 

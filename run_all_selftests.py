@@ -28,23 +28,42 @@ SUITES = [
     ("对抗性检验 A（边角与健壮性）", ["selftest_adversarial.py"], True),
     ("对抗性检验 B（保真度与元数据）", ["selftest_fidelity.py"], True),
     ("假想论文自检", ["selftest_synthetic.py"], True),
-    ("跨平台字体自检", ["selftest_platform.py"], True),
+    # 跨平台字体：两个脚本同一主题，合并为一套
+    #   selftest_platform.py   —— 字体替换行为、open_path、界面选项
+    #   selftest_fontparse.py  —— macOS system_profiler 输出的录制回放
+    ("跨平台字体（替换行为 + macOS 解析回放）",
+     ["selftest_platform.py", "selftest_fontparse.py"], True),
+    # 只在 macOS 上有意义；其他平台会自行跳过并以 0 退出
+    ("macOS 真机诊断", ["selftest_macos_live.py"], False),
 ]
 
 
-def run(name: str, args: list[str]) -> tuple[bool, str]:
+def run(name: str, scripts: list[str]) -> tuple[bool, str]:
+    """依次运行这一套里的所有脚本，全部成功才算通过。
+
+    设计成支持多个脚本，是为了让同一主题的检查能归为一套
+    （例如「跨平台字体」包含替换行为检查和 macOS 解析回放检查）。
+    """
     print("\n" + "=" * 76)
     print("运行: %s" % name)
     print("=" * 76)
-    r = subprocess.run([sys.executable] + args, cwd=HERE,
-                       capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
-    tail = (r.stdout or "").strip().splitlines()[-6:]
-    for line in tail:
-        print("   %s" % line)
-    if r.returncode != 0 and r.stderr:
-        print("   stderr: %s" % r.stderr.strip()[-400:])
-    return r.returncode == 0, (r.stdout or "")
+    all_out = []
+    all_ok = True
+    for script in scripts:
+        if len(scripts) > 1:
+            print("   --- %s" % script)
+        r = subprocess.run([sys.executable, script], cwd=HERE,
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        all_out.append(r.stdout or "")
+        tail = (r.stdout or "").strip().splitlines()[-6:]
+        for line in tail:
+            print("   %s" % line)
+        if r.returncode != 0:
+            all_ok = False
+            if r.stderr:
+                print("   stderr: %s" % r.stderr.strip()[-400:])
+    return all_ok, "\n".join(all_out)
 
 
 def main() -> int:
@@ -79,14 +98,16 @@ def main() -> int:
     print("=" * 76)
 
     total_checks = 0
+    import re
     for name, okk, out in results:
-        import re
-        m = None
-        for pat in (r"通过 (\d+) 项", r"通过(\d+)项"):
-            m = re.search(pat, out or "")
-            if m:
-                break
-        n = int(m.group(1)) if m else 0
+        # 一套里可能有多个脚本，要把它们各自的「通过 N 项」全部加起来，
+        # 不能只取第一个匹配（否则合并成一套后计数会偏小）。
+        counts = [int(m.group(1)) for m in
+                  re.finditer(r"通过 (\d+) 项", out or "")]
+        if not counts:
+            for m in re.finditer(r"通过(\d+)项", out or ""):
+                counts.append(int(m.group(1)))
+        n = sum(counts)
         total_checks += n
         print("  %-34s %s   %s 项" % (
             name, "通过" if okk else "失败", n if n else "-"))
