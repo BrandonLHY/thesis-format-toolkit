@@ -1,0 +1,74 @@
+name: 自检
+
+# 每次 push 和 PR 都跑全部自检，防止改坏已修好的行为。
+# 这些自检覆盖了开发过程中踩过的坑（主题字体压制、outlineLvl 默认值、
+# run 对象身份比较、字体链无效、参考文献序号误上标、跨 run 引用标记等），
+# 是有回归保护价值的，不只是形式。
+#
+# 本地一键跑全部：python run_all_selftests.py
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 依赖版本确认
+        run: python -c "import docx, lxml.etree; print('python-docx', docx.__version__); print('lxml', lxml.etree.__version__)"
+
+      # 验收检验：模拟全新用户走完整流程（依赖→造论文→识别→改写→核对）
+      - name: 验收检验
+        run: python 验收检验.py
+
+      # 对抗性 A：畸形输入（空文档、无 run、表格内段落、嵌套内容控件等）
+      - name: 对抗性检验 A（边角与健壮性）
+        run: python selftest_adversarial.py
+
+      # 对抗性 B：保真度（文档属性、页眉页脚、书签、域、幂等性）
+      - name: 对抗性检验 B（保真度与元数据）
+        run: python selftest_fidelity.py
+
+      - name: 假想论文端到端自检
+        run: python selftest_synthetic.py
+
+      - name: 跨平台字体自检
+        run: python selftest_platform.py
+
+      # Ubuntu runner 没有 X 显示，tkinter 建窗口会失败。
+      # 程序自检里的「图形界面构建」一项在无显示环境下会失败，属预期，
+      # 因此这一项只在 Windows 上跑。
+      - name: 程序自检（含 GUI 构建）
+        if: runner.os == 'Windows'
+        run: python main.py --selftest
+
+      - name: 上传自检报告
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 自检报告-${{ matrix.python-version }}
+          path: 自检报告.txt
+          if-no-files-found: ignore
+

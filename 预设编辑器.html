@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>排版预设编辑器</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f6f8;font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#1c1e21}
+header{background:#fff;border-bottom:1px solid #e4e6eb;padding:16px 24px;position:sticky;top:0;z-index:10}
+h1{font-size:19px;margin:0 0 4px}
+.hint{color:#8a8f98;font-size:12.5px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 24px 90px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e6eb;border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #eef0f3;font-size:13px;vertical-align:middle}
+th{background:#fafbfc;font-weight:600;color:#5a5f66;font-size:12.5px;white-space:nowrap;position:sticky;top:57px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfc}
+.rname{font-weight:600;white-space:nowrap}
+.rdesc{color:#8a8f98;font-size:11.5px;display:block;font-weight:400}
+select,input[type=number]{padding:4px 6px;border:1px solid #d8dade;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
+select:focus,input:focus{outline:2px solid #a8c7fa;outline-offset:-1px}
+input[type=number]{width:64px}
+input[type=checkbox]{width:15px;height:15px;cursor:pointer}
+.preview{background:#fff;border:1px solid #e4e6eb;border-radius:10px;padding:26px 30px;margin-top:22px}
+.preview h3{margin:0 0 14px;font-size:14px;color:#5a5f66;font-weight:600}
+.pv{margin:9px 0;padding:3px 4px;border-radius:4px}
+.pv:hover{background:#f0f7ff}
+.tag{display:inline-block;font-size:10.5px;color:#8a8f98;background:#f0f1f4;border-radius:3px;padding:0 5px;margin-right:8px;font-family:ui-monospace,Consolas,monospace}
+.bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e4e6eb;padding:12px 24px;display:flex;gap:10px;align-items:center;z-index:20}
+button{padding:8px 16px;border-radius:8px;border:1px solid #d8dade;background:#fff;font-size:13.5px;font-family:inherit;cursor:pointer}
+button:hover{background:#f5f6f8}
+button.primary{background:#1a73e8;color:#fff;border-color:#1a73e8;font-weight:600}
+button.primary:hover{background:#1765cc}
+.status{margin-left:auto;color:#8a8f98;font-size:12.5px}
+.note{background:#e8f0fe;border-radius:8px;padding:11px 14px;font-size:12.5px;color:#174ea6;margin:16px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>排版预设编辑器</h1>
+  <div class="hint">左边调每个区域用什么字体字号，下边看预览。调好后点「保存为我的预设.json」，再把那个文件交给改写脚本。</div>
+</header>
+
+<div class="wrap">
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>区域</th><th>中文字体</th><th>西文字体</th><th>字号</th><th>加粗</th>
+        <th>对齐</th><th>首行缩进</th><th>行距</th><th>段前</th><th>段后</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="note">
+    <b>说明：</b>这里定义的是「输出格式」——你希望每类内容长成什么样。
+    程序会先识别文档里每段属于哪个区域，再按这张表套用格式。
+    「字号」用中文字号（三号、小四……），1 磅 = 1/72 英寸，「小四」= 12 磅。
+  </div>
+
+  <div class="preview">
+    <h3>预览（按当前设定实时渲染）</h3>
+    <div id="pv"></div>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="primary" onclick="save()">保存为我的预设.json</button>
+  <button onclick="reset()">恢复默认</button>
+  <button onclick="copyJson()">复制 JSON</button>
+  <span class="status" id="st"></span>
+</div>
+
+<script>
+const REGIONS = [
+  ["title",       "论文/文档标题", "封面或首页大标题"],
+  ["cover_field", "封面信息",     "课程名称、姓名、学号等"],
+  ["h1",          "一级标题",     "一、引言 / 1. 绪论"],
+  ["h2",          "二级标题",     "（一）基本情况 / 1.1 概述"],
+  ["h3",          "三级标题",     "1、要点 / 1.1.1 细节"],
+  ["body",        "正文",         "段落主体文字"],
+  ["abstract",    "摘要内容",     "摘要正文"],
+  ["keywords",    "关键词",       "关键词段落"],
+  ["caption",     "图表题注",     "图1：xxx / 表1 xxx"],
+  ["ref_head",    "参考文献标题", "参考文献 / 注释"],
+  ["ref_item",    "参考文献条目", "每条文献著录"],
+  ["toc",         "目录",         "目录标题与条目"],
+  ["ack",         "致谢/附录",    "致谢与附录内容"],
+  ["quote",       "引用/注释文字", "较长的引文或注释"],
+];
+const FONTS = ["宋体","黑体","楷体","仿宋_GB2312","仿宋","微软雅黑","思源宋体","思源黑体","方正书宋"];
+const ASCII_FONTS = ["Times New Roman","Arial","Calibri","Courier New"];
+const SIZES = ["初号","小初","一号","小一","二号","小二","三号","小三","四号","小四","五号","小五"];
+const ALIGNS = ["未指定","左对齐","居中","右对齐","两端对齐"];
+const SIZE_PT = {"初号":42,"小初":36,"一号":26,"小一":24,"二号":22,"小二":18,"三号":16,"小三":15,"四号":14,"小四":12,"五号":10.5,"小五":9};
+
+const DEFAULTS = {
+  title:       {font_ea:"黑体",font_ascii:"Times New Roman",size:"三号",bold:true, align:"居中",   first_line_indent_chars:0,line_spacing:1.5,space_before_pt:0,space_after_pt:12},
+  cover_field: {font_ea:"黑体",font_ascii:"Times New Roman",size:"四号",bold:true, align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  h1:          {font_ea:"黑体",font_ascii:"Times New Roman",size:"四号",bold:false,align:"居中",   first_line_indent_chars:0,line_spacing:1.5,space_before_pt:12,space_after_pt:12},
+  h2:          {font_ea:"黑体",font_ascii:"Times New Roman",size:"四号",bold:false,align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:6,space_after_pt:6},
+  h3:          {font_ea:"宋体",font_ascii:"Times New Roman",size:"小四",bold:true, align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:3,space_after_pt:3},
+  body:        {font_ea:"宋体",font_ascii:"Times New Roman",size:"小四",bold:false,align:"两端对齐",first_line_indent_chars:2,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  abstract:    {font_ea:"楷体",font_ascii:"Times New Roman",size:"五号",bold:false,align:"两端对齐",first_line_indent_chars:2,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  keywords:    {font_ea:"楷体",font_ascii:"Times New Roman",size:"五号",bold:false,align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:6,space_after_pt:6},
+  caption:     {font_ea:"宋体",font_ascii:"Times New Roman",size:"五号",bold:false,align:"居中",   first_line_indent_chars:0,line_spacing:1.5,space_before_pt:3,space_after_pt:3},
+  ref_head:    {font_ea:"黑体",font_ascii:"Times New Roman",size:"四号",bold:false,align:"居中",   first_line_indent_chars:0,line_spacing:1.5,space_before_pt:12,space_after_pt:6},
+  ref_item:    {font_ea:"宋体",font_ascii:"Times New Roman",size:"小五",bold:false,align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  toc:         {font_ea:"宋体",font_ascii:"Times New Roman",size:"小四",bold:false,align:"左对齐", first_line_indent_chars:0,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  ack:         {font_ea:"宋体",font_ascii:"Times New Roman",size:"小四",bold:false,align:"两端对齐",first_line_indent_chars:2,line_spacing:1.5,space_before_pt:0,space_after_pt:0},
+  quote:       {font_ea:"楷体",font_ascii:"Times New Roman",size:"五号",bold:false,align:"两端对齐",first_line_indent_chars:2,line_spacing:1.25,space_before_pt:0,space_after_pt:0},
+};
+
+const SAMPLE = {
+  title:"论文题目示例", cover_field:"课程名称：中国政府与政治",
+  h1:"一、引言", h2:"（一）研究背景", h3:"1. 理论意义",
+  body:"数字技术的迅猛发展为基层治理注入动能，但同时也带来了新的负担。（正文示例）",
+  abstract:"本文以案例为切口，考察数字形式主义的生成机制。（摘要示例）",
+  keywords:"关键词：数字形式主义；数字技术；技术赋能；基层治理",
+  caption:"图1：本研究分析框架",
+  ref_head:"参考文献",
+  ref_item:"[1] 荣敬本,等. 从压力型体制向民主合作体制的转变[M]. 北京:中央编译出版社, 1998.",
+  toc:"一、引言 ................. 1",
+  ack:"感谢导师在本文写作过程中的悉心指导。（致谢示例）",
+  quote:"引文或注释文字示例。",
+};
+
+let state = JSON.parse(JSON.stringify(DEFAULTS));
+
+function opt(list, cur){
+  return list.map(v=>`<option value="${v}" ${v===cur?"selected":""}>${v}</option>`).join("");
+}
+function render(){
+  const tb = document.querySelector("#tbl tbody");
+  tb.innerHTML = REGIONS.map(([k,label,desc])=>{
+    const s = state[k];
+    return `<tr data-k="${k}">
+      <td class="rname">${label}<span class="rdesc">${desc}</span></td>
+      <td><select data-f="font_ea">${opt(FONTS,s.font_ea)}</select></td>
+      <td><select data-f="font_ascii">${opt(ASCII_FONTS,s.font_ascii)}</select></td>
+      <td><select data-f="size">${opt(SIZES,s.size)}</select></td>
+      <td><input type="checkbox" data-f="bold" ${s.bold?"checked":""}></td>
+      <td><select data-f="align">${opt(ALIGNS,s.align)}</select></td>
+      <td><input type="number" data-f="first_line_indent_chars" min="0" max="8" step="1" value="${s.first_line_indent_chars}"></td>
+      <td><input type="number" data-f="line_spacing" min="1" max="3" step="0.05" value="${s.line_spacing}"></td>
+      <td><input type="number" data-f="space_before_pt" min="0" max="60" step="1" value="${s.space_before_pt}"></td>
+      <td><input type="number" data-f="space_after_pt" min="0" max="60" step="1" value="${s.space_after_pt}"></td>
+    </tr>`;
+  }).join("");
+  tb.querySelectorAll("tr").forEach(tr=>{
+    const k = tr.dataset.k;
+    tr.querySelectorAll("[data-f]").forEach(el=>{
+      el.addEventListener("input", ()=>{
+        const f = el.dataset.f;
+        state[k][f] = el.type==="checkbox" ? el.checked
+                   : (el.type==="number" ? parseFloat(el.value)||0 : el.value);
+        preview();
+        setStatus("已修改："+k+"."+f);
+      });
+    });
+  });
+  preview();
+}
+
+function preview(){
+  const box = document.getElementById("pv");
+  const ALIGN_CSS={"未指定":"", "左对齐":"left","居中":"center","右对齐":"right","两端对齐":"justify"};
+  box.innerHTML = REGIONS.map(([k,label])=>{
+    const s = state[k], pt = SIZE_PT[s.size]||12;
+    const st = `font-family:'${s.font_ea}','${s.font_ascii}',serif;`
+      + `font-size:${pt}pt;font-weight:${s.bold?"700":"400"};`
+      + `text-align:${ALIGN_CSS[s.align]||"left"};`
+      + `line-height:${s.line_spacing};`
+      + `text-indent:${s.first_line_indent_chars}em;`
+      + `margin-top:${Math.min(s.space_before_pt,12)}px;margin-bottom:${Math.min(s.space_after_pt,12)}px;`;
+    return `<div class="pv"><span class="tag">${label}</span><span style="${st}">${SAMPLE[k]||""}</span></div>`;
+  }).join("");
+}
+
+async function save(){
+  const text = JSON.stringify(state,null,2);
+  // 优先用文件选择器直接存进工具目录，省掉「去下载文件夹搬文件」这一步
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "我的预设.json",
+        types: [{description:"排版预设", accept:{"application/json":[".json"]}}],
+      });
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      setStatus("已保存。现在双击「一键改写.bat」即可生效。");
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") { setStatus("已取消保存。"); return; }
+      // 其它错误回退到下载方式
+    }
+  }
+  const blob = new Blob([text],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "我的预设.json";
+  a.click();
+  setStatus("已存到「下载」文件夹，请移到工具目录并改名为「我的预设.json」。");
+}
+function reset(){
+  state = JSON.parse(JSON.stringify(DEFAULTS));
+  render();
+  setStatus("已恢复默认预设。");
+}
+function copyJson(){
+  navigator.clipboard.writeText(JSON.stringify(state,null,2)).then(
+    ()=>setStatus("JSON 已复制到剪贴板。"),
+    ()=>setStatus("复制失败，请改用「保存」按钮。"));
+}
+function setStatus(t){ document.getElementById("st").textContent = t; }
+render();
+</script>
+</body>
+</html>
