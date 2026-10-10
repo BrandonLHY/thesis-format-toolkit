@@ -433,7 +433,7 @@ Mac 版 Word 静默回退到别的字体。**也就是说：探测失败时不�
 ├── run_all_selftests.py     一键跑全部自检
 ├── specs/                   格式规范（可扩展）
 ├── tests/fixtures/          录制回放夹具（macOS 字体探测输出）
-├── docs/                    打包与发布说明
+├── docs/                    打包与发布说明、开发笔记
 └── .github/workflows/       CI（Windows + Ubuntu + macOS）
 ```
 
@@ -480,6 +480,11 @@ python run_all_selftests.py
 
 如果你有**识别错误的真实案例**，那是特别有价值的反馈——
 请附上（脱敏后的）文档结构描述和你期望的识别结果。
+
+打算改代码的话，建议先看 [docs/开发笔记.md](docs/开发笔记.md)——
+里面记了 CI 怎么查才可靠、没有真机怎么测其他平台、
+以及一批准会把项目改坏的坑（PowerShell 语法陷阱、字体名与文件名没有
+可靠对应关系、诊断脚本不该把环境差异判成失败等）。
 
 ---
 
