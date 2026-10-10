@@ -205,18 +205,34 @@ def main() -> int:
         hit = [c for c in FONT_ALIASES[role] if _norm(c) in fixture_names]
         print("     %-12s 命中 %s" % (role, hit[:2] if hit else "无"))
 
-    sec("7. resolve_fonts_in_preset 在非 macOS 上不改动")
-    preset = {"regions": {"body": {"ea_font": "宋体"}}}
-    out = resolve_fonts_in_preset(preset)
-    # 注意：该函数返回 (预设, 改动列表) 元组，不是单独的字典。
-    o, changes = out if isinstance(out, tuple) else (out, [])
+    sec("7. resolve_fonts_in_preset 的行为（用真实预设结构）")
+    # ★ 踩过的坑：这个测试原先写成
+    #     preset = {"regions": {"body": {"ea_font": "宋体"}}}
+    #   但 resolve_fonts_in_preset 期望的是 {区域名: RegionFormat 对象}
+    #   （它用 getattr(fmt, "font_ea") 取值）。嵌套字典让它取不到属性，
+    #   于是「永远原样返回」，测试恒真——等于没测。
+    #   现在改用真实结构，并额外断言其它字段没被改动。
+    from rewriter import RegionFormat
+    body = RegionFormat(font_ea="宋体", font_ascii="Times New Roman",
+                        size="小四", bold=False, align="两端对齐",
+                        first_line_indent_chars=2, line_spacing=1.5,
+                        space_before_pt=0, space_after_pt=0)
+    preset = {"body": body}
+    out, changes = resolve_fonts_in_preset(preset)
+    ok("返回 (预设字典, 改动列表)", isinstance(out, dict) and isinstance(changes, list),
+       "%s / %s" % (type(out).__name__, type(changes).__name__))
+    ok("预设形状正确（按区域名索引）", "body" in out, repr(list(out.keys())[:5]))
     if sys.platform == "darwin":
-        print("  （当前是 macOS，跳过「不替换」断言）")
+        print("  （macOS：跳过「不替换」断言；替换行为见第 10 节的 monkeypatch 测试）")
     else:
-        ok("Windows/Linux 上预设原样返回",
-           o["regions"]["body"]["ea_font"] == "宋体",
-           repr(o["regions"]["body"]["ea_font"]))
+        ok("Windows/Linux 上字体原样返回", out["body"].font_ea == "宋体",
+           repr(out["body"].font_ea))
         ok("Windows/Linux 上无改动记录", not changes, repr(changes)[:80])
+    # 这两个断言在两个平台上都成立：不该顺手改动其它字段
+    ok("字号未被改动", out["body"].size == "小四", repr(out["body"].size))
+    ok("行距未被改动", out["body"].line_spacing == 1.5, repr(out["body"].line_spacing))
+    ok("首行缩进未被改动", out["body"].first_line_indent_chars == 2,
+       repr(out["body"].first_line_indent_chars))
 
     sec("8. installed_fonts 在当前平台可用")
     fonts = installed_fonts()
