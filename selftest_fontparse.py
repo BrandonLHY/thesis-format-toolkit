@@ -124,11 +124,42 @@ def main() -> int:
         }]
     }, ensure_ascii=False)
     n2 = parse_system_profiler_fonts(nested)
-    ok("取到顶层 _name", "顶层条目" in n2)
-    ok("取到 _items 的 _name", "songti sc" in n2)
+    ok("能取到 _items 的 _name", "songti sc" in n2)
     ok("取到 family", "songti sc" in n2)
     ok("取到 typefaces 的 _name", "songti sc regular" in n2)
     ok("取到 postscript", "stsongti-sc-regular" in n2)
+    # ★ 区段标签不是字体名：不要把 SPFontsDataType 那层的 _name 收进来
+    ok("不把区段标签当字体名", "顶层条目" not in n2,
+       "「顶层条目」是区段标签，不该进字体集合")
+
+    sec("3b. _items 为空时必须返回空集合（真实缺陷的回归测试）")
+    # ★ 这是 macOS CI 真机测试发现的缺陷：
+    #   system_profiler 在受限环境（如 CI runner）会返回合法 JSON 但 _items 为空。
+    #   旧实现会对区段取 _name（「字体」/「Fonts」），于是 names 非空，
+    #   导致 _fonts_macos() 里「探测不到就退回扫描字体目录」的兜底不触发，
+    #   installed_fonts() 返回 {"字体"}，resolve_font() 找不到任何候选，
+    #   最终把 Windows 字体名原样写进文档（Mac 上显示错误字体）且不报错。
+    empty_cases = [
+        ("_items 缺失，只有区段 _name",
+         '{"SPFontsDataType": [{"_name": "字体"}]}'),
+        ("_items 是空数组",
+         '{"SPFontsDataType": [{"_name": "字体", "_items": []}]}'),
+        ("英文区段标签",
+         '{"SPFontsDataType": [{"_name": "Fonts"}]}'),
+        ("SPFontsDataType 是空数组",
+         '{"SPFontsDataType": []}'),
+        ("_items 里的条目都没字体名",
+         '{"SPFontsDataType": [{"_name": "字体", "_items": [{}, {"typefaces": []}]}]}'),
+    ]
+    for label, payload in empty_cases:
+        r = parse_system_profiler_fonts(payload)
+        ok("%s -> 返回空集合（实际 %d 个）" % (label, len(r)), len(r) == 0,
+           "返回了 %s" % sorted(r)[:5])
+
+    # 反向确认：确实有字体时不能返回空（避免上面的修复把正常情况也清空了）
+    r_ok = parse_system_profiler_fonts(
+        '{"SPFontsDataType": [{"_name": "字体", "_items": [{"_name": "Songti SC"}]}]}')
+    ok("有字体时正常返回", "songti sc" in r_ok, repr(sorted(r_ok)))
 
     sec("4. macOS 字体替换映射（纯逻辑，不需真机）")
     # 断言映射表覆盖了预设里会用到的 Windows 中文字体
@@ -193,6 +224,75 @@ def main() -> int:
     if sys.platform == "darwin":
         ok("macOS 上探测到字体（CI 验真）", len(fonts) > 0, "探测为空")
     print("     当前平台探测到 %d 个字体名" % len(fonts))
+
+    sec("9. 字体存在性判定（含降级路径的模糊匹配）")
+    from platform_fonts import _fuzzy_present
+    # 精确匹配由 resolve_font 内部处理，这里直接测模糊匹配这一层
+    ok("精确同形不做模糊也能命中（_norm）", _norm("Songti SC") == "songti sc")
+    # ★ 降级路径：目录扫描得到的是文件名（songti），要能匹配上家族名 Songti SC
+    ok("文件名 songti 能匹配 Songti SC",
+       _fuzzy_present("Songti SC", {"songti"}))
+    ok("文件名 heiti 能匹配 Heiti SC",
+       _fuzzy_present("Heiti SC", {"heiti"}))
+    ok("文件名 pingfang 能匹配 PingFang SC",
+       _fuzzy_present("PingFang SC", {"pingfang"}))
+    ok("文件名 kaiti 能匹配 Kaiti SC",
+       _fuzzy_present("Kaiti SC", {"kaiti"}))
+    # 短名不该乱命中
+    ok("短名不做模糊匹配（长度门槛）",
+       not _fuzzy_present("Kai", {"kaiti sc"}), "短名应被长度门槛挡住")
+    ok("无关字体不命中",
+       not _fuzzy_present("Songti SC", {"arial", "helvetica"}))
+
+    sec("10. 降级路径：目录扫描只拿到文件名时仍须解析出 macOS 家族名")
+    # ★ 踩过的坑（两层）：
+    #   1) 原实现在精确匹配那轮会因 Kaiti.ttc -> kaiti 与 Windows 名 KaiTi 撞名，
+    #      选中一个 Mac 上不存在的名字；
+    #   2) 只在模糊那轮修还不够——必须让「来源可靠的精确匹配」与
+    #      「来源不可靠只用模糊匹配」分开，并在不可靠时优先挑非精确命中的候选。
+    #   这段测试用 monkeypatch 在任意平台上验证该行为。
+    import platform_fonts as _pf
+    _orig_mac = _pf.is_macos
+    _orig_inst = _pf.installed_fonts
+    _orig_rel = _pf.fonts_from_reliable_source
+    try:
+        _pf.is_macos = lambda: True
+
+        # A. 来源可靠：system_profiler 给出真实家族名
+        _pf.installed_fonts = lambda: {
+            "songti sc", "heiti sc", "kaiti sc", "pingfang sc",
+            "stsong", "stheiti", "stfangsong",
+        }
+        _pf.fonts_from_reliable_source = lambda: True
+        # 注意：候选链里 STFangsong 排在 Kaiti SC 之前，所以仿宋应得 STFangsong
+        expect_a = {"宋体": "Songti SC", "黑体": "Heiti SC", "楷体": "Kaiti SC",
+                    "微软雅黑": "PingFang SC", "仿宋": "STFangsong"}
+        for role, want in expect_a.items():
+            got = _pf.resolve_font(role)
+            ok("来源可靠 %s -> %s" % (role, want), got == want, "实际 %s" % got)
+
+        # B. 来源不可靠：目录扫描只给文件名（songti / kaiti ...）
+        _pf.installed_fonts = lambda: {
+            "songti", "heiti", "kaiti", "pingfang", "stsong", "stheiti",
+        }
+        _pf.fonts_from_reliable_source = lambda: False
+        # 目录扫描拿不到 stfangsong（该字体在 Songti.ttc 内部），故仿宋落到 Kaiti SC
+        expect_b = {"宋体": "Songti SC", "黑体": "Heiti SC", "楷体": "Kaiti SC",
+                    "微软雅黑": "PingFang SC", "仿宋": "Kaiti SC"}
+        for role, want in expect_b.items():
+            got = _pf.resolve_font(role)
+            ok("来源不可靠 %s -> %s" % (role, want), got == want, "实际 %s" % got)
+
+        # 反向检查：降级路径绝不能把 Windows 名留在结果里
+        win_names = {"宋体", "黑体", "楷体", "微软雅黑", "仿宋",
+                     "KaiTi", "SimSun", "SimHei", "FangSong"}
+        leaked = [(r, _pf.resolve_font(r)) for r in expect_b
+                  if _pf.resolve_font(r) in win_names]
+        ok("降级路径不残留 Windows 字体名", not leaked, repr(leaked))
+    finally:
+        _pf.is_macos = _orig_mac
+        _pf.installed_fonts = _orig_inst
+        _pf.fonts_from_reliable_source = _orig_rel
 
     sec("结果")
     print("  通过 %d 项，失败 %d 项" % (PASS, FAIL))
