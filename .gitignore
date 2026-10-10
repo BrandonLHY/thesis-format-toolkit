@@ -24,11 +24,15 @@ __pycache__/
 *.wps
 !docs/sample-blank.docx
 
-# ---------- 用户生成物 ----------
+# ---------- 用户生成物 / 运行产物 ----------
+# 这些是程序运行或自检跑出来的文件，不是源码。
+# 踩过的坑：selftest_macos_sim.py 会把 macOS诊断报告.txt 写到项目根目录，
+# 一次 git add . 就把它提交进仓库了。
 预设.json
 我的预设.json
 本次使用的预设.json
 自检报告.txt
+macOS诊断报告.txt
 体检报告*.html
 改写明细.json
 *_已排版.docx
