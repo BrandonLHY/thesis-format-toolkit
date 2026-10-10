@@ -147,6 +147,12 @@ def write_readme(folder: str):
 · 对方电脑需要 64 位 Windows 7 或更高版本
 · 首次打开如果被 Windows 拦截，点「更多信息」→「仍要运行」
 
+【许可证】
+本程序是自由软件，以 GNU 通用公共许可证第 3 版（或更新版本）发布。
+完整许可证文本见同目录的 LICENSE 文件；源码见：
+https://github.com/BrandonLHY/thesis-format-toolkit
+这意味着你可以自由使用、修改、再分发，但分发衍生作品时须同样以 GPL 开源。
+
 【出问题怎么办】
 · 打不开：在文件夹里按住 Shift 右键 →「在此处打开 PowerShell 窗口」，
   输入  .\\论文格式改写器.exe --selftest  回车，然后把生成的「自检报告.txt」发回来
@@ -154,6 +160,21 @@ def write_readme(folder: str):
     with open(os.path.join(folder, "使用说明.txt"), "w", encoding="utf-8") as f:
         f.write(txt)
     print("已写入使用说明.txt")
+
+
+def copy_license(folder: str) -> bool:
+    """把 LICENSE 复制进发布文件夹。
+
+    GPL-3.0 义务：对外分发二进制时应随附许可证文本。
+    虽然也可以在文档里给出网络获取地址，但把文本直接放进包里最稳妥。
+    """
+    src = os.path.join(HERE, "LICENSE")
+    if not os.path.exists(src):
+        print("!! 未找到 LICENSE，跳过（GPL 要求随附许可证文本，请手动补上）")
+        return False
+    shutil.copy2(src, os.path.join(folder, "LICENSE"))
+    print("已复制 LICENSE（GPL-3.0 全文）")
+    return True
 
 
 def main():
@@ -164,10 +185,13 @@ def main():
         p = build("论文格式改写器", "onedir")
         if p:
             write_readme(p)
+            copy_license(p)
             made["文件夹版"] = p
     if "onefile" in modes:
         p = build("论文格式改写器_单文件版", "onefile")
         if p:
+            print("提示：单文件版无法随附 LICENSE 文件，")
+            print("      请在 Release 说明里注明许可证与源码地址（GPL 义务）")
             made["单文件版"] = p
 
     print("\n" + "=" * 70)
