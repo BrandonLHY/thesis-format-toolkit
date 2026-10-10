@@ -34,8 +34,16 @@ import sys
 import tempfile
 import traceback
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 保证中文输出在任何终端都不崩。
+# Windows 上 stdout 默认编码可能是 cp1252，直接 print 中文会抛
+# UnicodeEncodeError 并让脚本崩掉（GitHub Actions 的 windows runner 实测踩过）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Pt
