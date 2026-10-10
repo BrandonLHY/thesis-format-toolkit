@@ -55,7 +55,7 @@ except Exception:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 要模拟的套件（跳过本模拟脚本自己与 macOS 真机诊断脚本）
+# 要模拟的套件（跳过本模拟脚本自己）
 SUITES = [
     "验收检验.py",
     "selftest_adversarial.py",
@@ -63,6 +63,9 @@ SUITES = [
     "selftest_synthetic.py",
     "selftest_platform.py",
     "selftest_fontparse.py",
+    # macOS 真机诊断脚本本身也要能模拟 —— 它只在 macOS 上执行，
+    # 上一轮 CI 就是因为它对「_items 为空」的输入处理不当而失败。
+    "selftest_macos_live.py",
 ]
 
 # 真实的 macOS 家族名（依据 Apple 官方「macOS 内置字体」清单）
@@ -117,10 +120,50 @@ def _fake_fonts():
 _fake_fonts.cache_clear = lambda: None
 pf.installed_fonts = _fake_fonts
 
+# ---- 让 selftest_macos_live.py 也能在这里跑 ----
+# 它只在 macOS 上执行，且会直接调用 system_profiler，
+# 所以把 subprocess.run 也按模式伪造一份。
+import subprocess as _sp
+_real_run = _sp.run
+
+
+class _FakeProc:
+    def __init__(self, rc, out, err=""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+
+
+def _fake_run(cmd, *a, **k):
+    try:
+        argv = list(cmd)
+    except TypeError:
+        return _real_run(cmd, *a, **k)
+    if argv and argv[0] == "system_profiler":
+        return _FakeProc(0, %(sp_json)r)
+    if argv and argv[0] == "sw_vers":
+        return _FakeProc(0, "ProductName:\\t\\tmacOS\\nProductVersion:\\t\\t14.0\\n")
+    return _real_run(cmd, *a, **k)
+
+
+_sp.run = _fake_run
+
 target = sys.argv[1]
 sys.argv = [os.path.join(HERE, target)]
 runpy.run_path(os.path.join(HERE, target), run_name="__main__")
 '''
+
+# 伪造的 system_profiler 输出：对应两种真实情形
+SP_JSON_PROFILER = (
+    '{"SPFontsDataType": [{"_name": "字体", "_items": ['
+    '{"_name": "Songti SC", "path": "/System/Library/Fonts/Supplemental/Songti.ttc",'
+    ' "type": "TrueType", "enabled": "yes", "typefaces": ['
+    '{"_name": "Songti SC Regular", "family": "Songti SC",'
+    ' "fullname": "Songti SC Regular", "style": "Regular"}]}]}]}'
+)
+# ★ 这一种才是真机 runner 上的实际形态：JSON 结构合法，但 _items 为空。
+#   上一轮 CI 就是因为诊断脚本没考虑这种输入而失败。
+SP_JSON_EMPTY = '{"SPFontsDataType": [{"_name": "字体", "_items": []}]}'
+
+SP_JSON = {"profiler": SP_JSON_PROFILER, "dirscan": SP_JSON_EMPTY}
 
 
 MODE_LABEL = {
@@ -138,6 +181,7 @@ def main() -> int:
             f.write(RUNNER_TEMPLATE % {
                 "here": HERE, "mode": mode,
                 "family": MACOS_FAMILY, "dirscan": MACOS_DIRSCAN,
+                "sp_json": SP_JSON[mode],
             })
         runners[mode] = p
 
