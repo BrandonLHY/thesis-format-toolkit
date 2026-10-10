@@ -25,7 +25,7 @@ Word 论文的格式要求是几十条硬指标：一级标题四号黑体、正
 - **本地运行** —— 不联网、不上传任何内容
 - **格式可自定义** —— 字体字号在界面上改，不用动代码
 - **规范可替换** —— 换学校只需新增一个 JSON，程序不用改
-- **六套自检** —— 共 256 项，每次提交自动运行
+- **六套自检** —— 共 254 项，每次提交自动运行
 
 ---
 
@@ -157,8 +157,9 @@ python report_html.py 论文.docx specs/sysu_undergraduate_thesis.json 报告.ht
 
 ## 自检
 
-**六套自检，共 256 项**，每次 push 由 CI 自动运行
-（Windows + Ubuntu + macOS，Python 3.10/3.12）。
+**六套自检，共 254 项**，每次 push 由 CI 自动运行。
+当前 CI 在 **Windows + Ubuntu + macOS** 三个平台上全部通过
+（Python 3.10/3.12）。
 
 ```bash
 python run_all_selftests.py     # 一键跑全部并汇总
@@ -172,9 +173,10 @@ python selftest_adversarial.py   # 39 项：畸形输入的健壮性
 python selftest_fidelity.py      # 39 项：输出保真度与元数据保全
 python selftest_synthetic.py     # 36 项：假想论文端到端
 python selftest_platform.py      # 18 项：字体替换行为
-python selftest_fontparse.py     # 76 项：字体解析（含 macOS 录制回放）
+python selftest_fontparse.py     # 74 项：字体解析（含 macOS 录制回放）
 python main.py --selftest        # 11 项：依赖、GUI、端到端
 python selftest_macos_live.py    # macOS 真机诊断（非 macOS 自动跳过）
+python selftest_macos_sim.py     # 在任意平台模拟 macOS 跑上面全部套件
 ```
 
 ### 各套覆盖什么
@@ -188,25 +190,45 @@ python selftest_macos_live.py    # macOS 真机诊断（非 macOS 自动跳过�
 | **跨平台字体** | 字体名不含逗号、Windows 不替换、模拟 macOS 替换、探测失败降级、界面选项、**macOS `system_profiler` 输出的录制回放**、中文字体角色在 macOS 上都有可用候选 |
 | **程序自检** | 打包后依赖完整、GUI 可构建、上标规则、端到端改写 |
 | **macOS 真机诊断** | 在 macOS 上打印真实 `system_profiler` 调用实况与 JSON 结构、与录制夹具交叉比对、验证核心字体可用性。system_profiler 不可用时记为**环境限制**而非失败，改用字体目录扫描继续验证 |
+| **macOS 环境模拟** | 在任意平台模拟 macOS（两种环境：探测正常 / 退回扫目录），跑上面全部套件，一次列出所有只在 macOS 上失败的断言 |
 
 ### 没有 Mac 电脑，怎么测 macOS 适配
 
 macOS 适配的风险几乎全在**字体探测**上——`system_profiler SPFontsDataType -json`
-的输出结构在不同 macOS 版本间不完全一致，字段还可能缺失。这部分可以用两个办法覆盖：
+的输出结构在不同 macOS 版本间不完全一致，字段还可能缺失。用三个办法覆盖：
 
-1. **录制回放**（`selftest_fontparse.py`，76 项）
-   把真实的 `system_profiler` 输出录下来存成 `tests/fixtures/fonts_macos_real.json`，
-   喂给解析函数做确定性断言。这样在 Windows 上也能测 macOS 的解析逻辑，
-   还额外覆盖了畸形输入（截断的 JSON、字段为 null、类型不对等 12 种）。
+1. **录制回放**（`selftest_fontparse.py`，74 项）
+   把真实的 `system_profiler` 输出结构录下来存成
+   `tests/fixtures/fonts_macos_real.json`，喂给解析函数做确定性断言。
+   这样在 Windows 上也能测 macOS 的解析逻辑，还额外覆盖了畸形输入
+   （截断的 JSON、字段为 null、类型不对等 12 种）。
 
-2. **免费的真机 CI**（GitHub Actions 的 `macos-latest` runner）
-   公开仓库使用标准 runner 不收费。`selftest_macos_live.py` 会在真机上
-   打印真实的 JSON 结构，与夹具逐字段比对——**这样能确证夹具没有脱离现实**，
-   避免"用错的夹具测出假的通过"。
+2. **环境模拟**（`selftest_macos_sim.py`）
+   在任意平台把平台标识、字体探测结果都替换成 macOS 的样子，
+   再跑一遍全部套件，**一次列出所有「只在 macOS 上才会失败」的断言**。
 
-**这套办法真的抓到了一个缺陷**（不是 CI 环境问题，是程序缺陷）：
+   模拟两种环境，都要通过：
 
-在受限环境里 `system_profiler` 会返回合法 JSON 但 `_items` 为空。
+   | 模式 | 含义 |
+   |---|---|
+   | `profiler` | `system_profiler` 正常，拿到真实字体家族名 |
+   | `dirscan` | `system_profiler` 失败，退回扫描目录，只有文件名 |
+
+   **真机 runner 上是第二种**，所以这一种必须覆盖。
+   实测教训：最初只模拟了第一种，结果真机连续失败三轮。
+
+3. **免费的真机 CI**（GitHub Actions 的 `macos-latest` runner）
+   公开仓库使用标准 runner 不收费。`selftest_macos_live.py` 在真机上打印
+   `system_profiler` 的实际返回情况，与录制夹具交叉比对——
+   **这样能确证夹具没有脱离现实**，避免「用错的夹具测出假的通过」。
+
+**当前状态**：三个平台（Windows / Ubuntu / macOS）CI 全绿。
+
+#### 这套办法确实抓到了一个真缺陷
+
+不是 CI 环境问题，是程序缺陷：
+
+受限环境里 `system_profiler` 会返回合法 JSON 但 `_items` 为空。
 旧实现把 `SPFontsDataType` 那一层的 `_name`（区段标签「字体」/「Fonts」）
 也当成了字体名，于是字体集合变成 `{"字体"}` —— **非空**，
 导致「探测不到就退回扫描字体目录」的兜底不触发。
@@ -214,9 +236,13 @@ macOS 适配的风险几乎全在**字体探测**上——`system_profiler SPFon
 Mac 版 Word 静默回退到别的字体。**也就是说：探测失败时不但没有降级，
 反而伪装成探测成功。**
 
-修复后：区段标签不再被当作字体名；字体名来源被区分为 `profiler` / `dirscan`，
-目录扫描（只拿得到文件名 `Kaiti.ttc -> kaiti`，会与 Windows 名 `KaiTi` 撞名）
-时禁用精确匹配，只用保守的前缀模糊匹配。
+修复过程中还走过一段弯路，值得记下来：为了「只扫到文件名」的降级路径，
+曾经加过前缀模糊匹配（想把 `songti` 认成 `Songti SC`）。但那套启发式
+本质上是在猜，连续引入两个错误——`kaiti` 被认成 Windows 名 `KaiTi`、
+`times` 被认成 `Times`。最终结论是
+**文件名与字体家族名之间没有可靠的对应关系**，于是回退为只做精确匹配：
+命中就用，命中不了就保持原名字（Word 会自行回退，与改造前行为一致），
+绝不凭空写入一个系统里不存在的字体名。
 
 **仍然测不到的**：字体名在 Mac 版 Word 里是否真能命中、界面在 Mac 上的实际外观、
 `.app` 打包（PyInstaller 不能跨平台打包，只能在 Mac 上做）。
@@ -316,7 +342,7 @@ Mac 版 Word 静默回退到别的字体。**也就是说：探测失败时不�
 本项目在开发过程中使用了 **AI 编程助手（DeepSeek Harness）** 辅助实现。
 
 需求定义、产品形态设计、真实文档测试、问题定位与最终验收由作者完成。
-代码由**六套自检共 256 项**覆盖，并在多份真实论文上验证——
+代码由**六套自检共 254 项**覆盖，并在多份真实论文上验证——
 上表列出的每一项已知缺陷，都来自真实使用中暴露的问题。
 
 ---
