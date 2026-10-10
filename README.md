@@ -1,10 +1,12 @@
-# 论文格式改写器
+# 手动调论文格式？一键搞定！
 
 [![自检](https://github.com/BrandonLHY/thesis-format-toolkit/actions/workflows/selftest.yml/badge.svg)](https://github.com/BrandonLHY/thesis-format-toolkit/actions/workflows/selftest.yml)
 [![许可证: GPL-3.0](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-**改格式一秒钟，调格式一整晚。** 这个工具把后者变成前者。
+**论文格式改写器** · 把 Word 论文按格式规范重新排版，不修改你的原文件
+
+---
 
 Word 论文的格式要求是几十条硬指标：一级标题四号黑体、正文小四号宋体、
 行距 1.5 倍、参考文献小五号……而且**必须逐个段落设**，漏掉一处就要从头查。
