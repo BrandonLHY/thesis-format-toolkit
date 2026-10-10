@@ -44,15 +44,16 @@
 > 放在 `C:\Program Files` 下会因权限问题无法保存设定。
 > 首次运行可能被 SmartScreen 提示「未知发布者」，点「更多信息」→「仍要运行」。
 
-### 方式二：从源码运行（Windows / macOS / Linux）
+### 方式二：从源码运行
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-macOS 上可以双击 `启动.command`，它会自动检查并安装依赖。
-详细说明见 [docs/Mac使用说明.md](docs/Mac使用说明.md)。
+需要 Python 3.10 或更高版本。代码本身是跨平台的（字体处理在 macOS 上会自动
+把「宋体」等 Windows 字体名替换成系统存在的 Songti SC 等），但目前只在 Windows 上
+做过完整验证与打包，macOS 未在真机验证。
 
 ### 方式三：命令行
 
@@ -240,10 +241,12 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 ├── platform_fonts.py        跨平台字体适配
 ├── audit_engine.py          合规体检引擎
 ├── report_html.py           体检报告渲染
+├── environment_probe.py     运行环境探测（有无图形显示等）
 ├── build_exe.py             Windows 打包
 ├── selftest_*.py            自检
+├── run_all_selftests.py     一键跑全部自检
 ├── specs/                   格式规范（可扩展）
-├── docs/                    使用说明
+├── docs/                    打包与发布说明
 └── .github/workflows/       CI
 ```
 

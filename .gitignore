@@ -5,8 +5,10 @@
 # 一旦误提交用户论文，个人隐私就永久留在 Git 历史里，事后难以清除。
 
 # ---------- 构建产物 ----------
+# exe 与发布压缩包走 GitHub Releases，不进仓库
 dist/
 build/
+release/
 *.spec
 __pycache__/
 *.py[cod]
