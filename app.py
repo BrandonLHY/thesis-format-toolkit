@@ -56,7 +56,7 @@ from rewriter import (                                            # noqa: E402
 )
 
 APP_TITLE = "论文格式改写器"
-VERSION = "1.1"
+VERSION = "1.2"
 ASCII_FONTS = ["Times New Roman", "Arial", "Calibri", "Courier New"]
 PRESET_FILENAME = "预设.json"
 
