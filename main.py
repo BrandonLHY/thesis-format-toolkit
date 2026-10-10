@@ -105,7 +105,19 @@ def selftest() -> int:
         return "改写 %d 段，输出可重新打开" % res["changed_count"]
 
     def _gui_construct():
-        """真正把图形界面搭起来再销毁——验证打包后的 GUI 可用。"""
+        """真正把图形界面搭起来再销毁——验证打包后的 GUI 可用。
+
+        无图形显示的环境（CI runner、纯 SSH）建不了窗口，这属于环境限制，
+        此时跳过而不是判为失败。踩过的坑：GitHub ubuntu runner 上抛
+        TclError: no display name and no $DISPLAY environment variable。
+        """
+        try:
+            from environment_probe import can_create_window
+            can_gui, why = can_create_window()
+        except Exception:
+            can_gui, why = True, ""
+        if not can_gui:
+            return "跳过：当前环境无图形显示（%s）" % why
         import tkinter as tk
         import app as appmod
         root = tk.Tk()

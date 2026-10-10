@@ -156,11 +156,13 @@ def main() -> int:
             ok(name, True)
         except ImportError as e:
             ok(name, False, str(e))
+    # 注意：tkinter 的导入本身在无显示环境也能成功，所以这里只检查「能否导入」。
+    # 真正建窗口的检查在第 10 节，那里会先探测显示环境。
     try:
         import tkinter  # noqa
-        ok("tkinter（图形界面）", True)
+        ok("tkinter（图形界面库可导入）", True)
     except Exception as e:
-        ok("tkinter（图形界面）", False, str(e))
+        ok("tkinter（图形界面库可导入）", False, str(e))
 
     # ---------- 2. 造论文 ----------
     sec("2. 构造测试论文（覆盖边角情况）")
@@ -304,17 +306,29 @@ def main() -> int:
 
     # ---------- 10. GUI 可构建 ----------
     sec("10. 图形界面")
+    # 无图形显示的环境（CI runner、纯 SSH）建不了窗口，这属于环境限制而非程序缺陷，
+    # 应当跳过而不是判为失败。踩过的坑：GitHub ubuntu runner 上报
+    # TclError: no display name and no $DISPLAY environment variable，导致 CI 标红。
     try:
-        import tkinter as tk
-        import app as appmod
-        root = tk.Tk()
-        root.withdraw()
-        a = appmod.App(root)
-        n = len(a.vars)
-        root.destroy()
-        ok("界面构建成功（%d 个区域）" % n, n >= 10)
-    except Exception as e:
-        ok("界面构建", False, repr(e)[:120])
+        from environment_probe import can_create_window
+        can_gui, why = can_create_window()
+    except Exception:
+        can_gui, why = True, ""      # 探测模块缺失时按旧行为尝试
+    if not can_gui:
+        print("  [跳过] 图形界面：当前环境无显示（%s）" % why)
+        print("         这不算失败——请在桌面环境或有显示的机器上验证界面")
+    else:
+        try:
+            import tkinter as tk
+            import app as appmod
+            root = tk.Tk()
+            root.withdraw()
+            a = appmod.App(root)
+            n = len(a.vars)
+            root.destroy()
+            ok("界面构建成功（%d 个区域）" % n, n >= 10)
+        except Exception as e:
+            ok("界面构建", False, repr(e)[:120])
 
     # ---------- 汇总 ----------
     sec("结果汇总")

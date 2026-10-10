@@ -40,6 +40,8 @@ jobs:
         run: python -c "import docx, lxml.etree; print('python-docx', docx.__version__); print('lxml', lxml.etree.__version__)"
 
       # 验收检验：模拟全新用户走完整流程（依赖→造论文→识别→改写→核对）
+      # 无图形显示的环境会自动跳过「界面构建」那一项（不是失败），
+      # 所以这个可以在两个平台上都跑。
       - name: 验收检验
         run: python 验收检验.py
 
@@ -58,8 +60,8 @@ jobs:
         run: python selftest_platform.py
 
       # Ubuntu runner 没有 X 显示，tkinter 建窗口会失败。
-      # 程序自检里的「图形界面构建」一项在无显示环境下会失败，属预期，
-      # 因此这一项只在 Windows 上跑。
+      # 「程序自检」里的界面项现在会自己探测并跳过，但为了不出意外，
+      # 仍把它限定在 Windows 上跑；Ubuntu 只跑不涉及显示的几套。
       - name: 程序自检（含 GUI 构建）
         if: runner.os == 'Windows'
         run: python main.py --selftest
