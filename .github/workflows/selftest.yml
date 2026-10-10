@@ -85,6 +85,12 @@ jobs:
       - name: macOS 真机诊断
         run: python selftest_macos_live.py
 
+      # macOS 环境模拟：在任意平台模拟 macOS 跑一遍全部套件，
+      # 提前发现「只在 macOS 上才失败」的断言（真机 CI 每次只暴露第一个失败，
+      # 这个可以一次列全）。放在真机诊断之后，方便对照。
+      - name: macOS 环境模拟
+        run: python selftest_macos_sim.py
+
       # Ubuntu runner 没有 X 显示，tkinter 建窗口会失败。
       # 「程序自检」里的界面项会自己探测并跳过，但为了不出意外，
       # 仍把它限定在 Windows 上跑。

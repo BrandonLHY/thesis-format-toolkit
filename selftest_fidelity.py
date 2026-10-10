@@ -414,7 +414,14 @@ def main() -> int:
             rf = rpr.find(qn("w:rFonts")) if rpr is not None else None
             if rf is not None:
                 fonts.add(rf.get(qn("w:eastAsia")))
-        ok("自定义预设的字体生效（楷体）", "楷体" in fonts, "实际 %s" % fonts)
+        # ★ 期望值要经过平台字体解析：macOS 上「楷体」会被替换成 Kaiti SC，
+        #   直接断言「楷体」在 macOS 上必然失败（由 macOS CI 真机测试发现）。
+        from platform_fonts import resolve_font as _rf
+        want_font = _rf("楷体")
+        detail = "实际 %s" % fonts
+        if want_font != "楷体":
+            detail += "（本平台把楷体解析成 %s）" % want_font
+        ok("自定义预设的字体生效（%s）" % want_font, want_font in fonts, detail)
         ls = target.paragraph_format.line_spacing
         ok("自定义预设的行距生效（2.0）", ls == 2.0, "实际 %s" % ls)
 

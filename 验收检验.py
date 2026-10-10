@@ -229,6 +229,12 @@ def main() -> int:
 
     # ---------- 5. 字体字号 ----------
     sec("5. 字体字号是否生效")
+    # ★ 期望值必须经过平台字体解析。
+    #   macOS 上程序会把「宋体」等 Windows 字体名替换成系统存在的字体
+    #   （Songti SC / Heiti SC 等），这是平台适配的应有行为。
+    #   原先这里直接断言「黑体/宋体」，在 macOS 上必然失败——
+    #   由 macOS CI 真机测试发现。
+    from platform_fonts import resolve_font as _resolve_font
     checks = [
         ("h1_fmt", "黑体", 14.0, False, "一级标题"),
         ("h2_fmt", "黑体", 14.0, False, "二级标题"),
@@ -238,9 +244,12 @@ def main() -> int:
     ]
     for kk, ea, pt, bold, desc in checks:
         f = para_font(doc_out.paragraphs[key[kk]])
-        good = (f["ea"] == ea and f["pt"] == pt and f["bold"] == bold)
-        ok("%s = %s %.1fpt 粗=%s" % (desc, ea, pt, bold), good,
-           "实际 %s %s pt=%s" % (f["ea"], f["pt"], f["bold"]))
+        want_ea = _resolve_font(ea)
+        good = (f["ea"] == want_ea and f["pt"] == pt and f["bold"] == bold)
+        detail = "实际 %s %s pt=%s" % (f["ea"], f["pt"], f["bold"])
+        if want_ea != ea:
+            detail += "（本平台把 %s 解析成 %s）" % (ea, want_ea)
+        ok("%s = %s %.1fpt 粗=%s" % (desc, want_ea, pt, bold), good, detail)
 
     # ---------- 6. 编号重排 ----------
     sec("6. 标题编号重排")

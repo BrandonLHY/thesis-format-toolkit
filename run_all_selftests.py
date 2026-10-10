@@ -35,6 +35,9 @@ SUITES = [
      ["selftest_platform.py", "selftest_fontparse.py"], True),
     # 只在 macOS 上有意义；其他平台会自行跳过并以 0 退出
     ("macOS 真机诊断", ["selftest_macos_live.py"], False),
+    # 在任意平台模拟 macOS 跑一遍全部套件，提前发现「只在 macOS 上失败」的断言。
+    # 放在最后：它自己会再跑一遍上面那些套件，输出的失败明细更具体。
+    ("macOS 环境模拟（跨平台提前发现问题）", ["selftest_macos_sim.py"], True),
 ]
 
 
