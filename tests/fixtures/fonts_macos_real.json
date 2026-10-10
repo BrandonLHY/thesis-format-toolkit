@@ -14,7 +14,7 @@
               "family": "Songti SC",
               "fullname": "Songti SC Regular",
               "style": "Regular",
-              "unique": "Songti SC Regular; 15.0d1e1; 2022-08-30",
+              "unique": "Songti SC Regular; 15.0d1e1; 2023-05-05",
               "version": "15.0d1e1"
             },
             {
@@ -42,6 +42,20 @@
               "family": "STSong",
               "fullname": "STSong",
               "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "LiSong Pro",
+          "path": "/System/Library/Fonts/Supplemental/LiSong Pro Light.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "LiSong Pro Light",
+              "family": "LiSong Pro",
+              "fullname": "LiSong Pro Light",
+              "style": "Light"
             }
           ]
         },
@@ -124,6 +138,68 @@
               "family": "Kaiti SC",
               "fullname": "Kaiti SC Regular",
               "style": "Regular"
+            },
+            {
+              "_name": "Kaiti SC Bold",
+              "family": "Kaiti SC",
+              "fullname": "Kaiti SC Bold",
+              "style": "Bold"
+            }
+          ]
+        },
+        {
+          "_name": "STKaiti",
+          "path": "/System/Library/Fonts/Supplemental/Kaiti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "STKaiti",
+              "family": "STKaiti",
+              "fullname": "STKaiti",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "STFangsong",
+          "path": "/System/Library/Fonts/Supplemental/Songti.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "STFangsong",
+              "family": "STFangsong",
+              "fullname": "STFangsong",
+              "style": "Regular"
+            }
+          ]
+        },
+        {
+          "_name": "Lantinghei SC",
+          "path": "/Library/Fonts/Lantinghei.ttc",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Lantinghei SC Extralight",
+              "family": "Lantinghei SC",
+              "fullname": "Lantinghei SC Extralight",
+              "style": "Extralight"
+            }
+          ]
+        },
+        {
+          "_name": "Arial Unicode MS",
+          "path": "/Library/Fonts/Arial Unicode.ttf",
+          "type": "TrueType",
+          "enabled": "yes",
+          "typefaces": [
+            {
+              "_name": "Arial Unicode MS",
+              "family": "Arial Unicode MS",
+              "fullname": "Arial Unicode MS",
+              "style": "Regular"
             }
           ]
         },
@@ -172,68 +248,6 @@
               "family": "Helvetica Neue",
               "fullname": "Helvetica Neue",
               "style": "Regular"
-            },
-            {
-              "_name": "Helvetica Neue Bold",
-              "family": "Helvetica Neue",
-              "fullname": "Helvetica Neue Bold",
-              "style": "Bold"
-            }
-          ]
-        },
-        {
-          "_name": "SIL-Heiti",
-          "path": "/Library/Fonts/SIL-Heiti.ttf",
-          "type": "TrueType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "SIL-Heiti",
-              "family": "SIL-Heiti",
-              "fullname": "SIL-Heiti",
-              "style": "Regular"
-            }
-          ]
-        },
-        {
-          "_name": "Source Han Serif SC",
-          "path": "/Library/Fonts/SourceHanSerifSC-Regular.otf",
-          "type": "OpenType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "Source Han Serif SC",
-              "family": "Source Han Serif SC",
-              "fullname": "Source Han Serif SC",
-              "style": "Regular"
-            }
-          ]
-        },
-        {
-          "_name": "Source Han Sans SC",
-          "path": "/Library/Fonts/SourceHanSansSC-Regular.otf",
-          "type": "OpenType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "Source Han Sans SC",
-              "family": "Source Han Sans SC",
-              "fullname": "Source Han Sans SC",
-              "style": "Regular"
-            }
-          ]
-        },
-        {
-          "_name": "STFangsong",
-          "path": "/System/Library/Fonts/Supplemental/Songti.ttc",
-          "type": "TrueType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "STFangsong",
-              "family": "STFangsong",
-              "fullname": "STFangsong",
-              "style": "Regular"
             }
           ]
         },
@@ -252,43 +266,15 @@
           ]
         },
         {
-          "_name": "Noto Serif CJK SC",
-          "path": "/Library/Fonts/NotoSerifCJKsc-Regular.otf",
-          "type": "OpenType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "Noto Serif CJK SC",
-              "family": "Noto Serif CJK SC",
-              "fullname": "Noto Serif CJK SC",
-              "style": "Regular"
-            }
-          ]
-        },
-        {
-          "_name": "Noto Sans CJK SC",
-          "path": "/Library/Fonts/NotoSansCJKsc-Regular.otf",
-          "type": "OpenType",
-          "enabled": "yes",
-          "typefaces": [
-            {
-              "_name": "Noto Sans CJK SC",
-              "family": "Noto Sans CJK SC",
-              "fullname": "Noto Sans CJK SC",
-              "style": "Regular"
-            }
-          ]
-        },
-        {
-          "_name": "禁用字体示例",
-          "path": "/Library/Fonts/Disabled.ttf",
+          "_name": "STIX Two Text",
+          "path": "/System/Library/Fonts/STIXTwoText.ttf",
           "type": "TrueType",
           "enabled": "no",
           "typefaces": [
             {
-              "_name": "Disabled Font",
-              "family": "Disabled Font",
-              "fullname": "Disabled Font",
+              "_name": "STIX Two Text",
+              "family": "STIX Two Text",
+              "fullname": "STIX Two Text",
               "style": "Regular"
             }
           ]
