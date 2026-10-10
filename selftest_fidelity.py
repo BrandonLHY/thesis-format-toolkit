@@ -266,6 +266,70 @@ def main() -> int:
     ok("媒体文件不丢失", set(media_a) <= set(media_b) or len(media_a) == len(media_b),
        "%s -> %s" % (media_a, media_b))
 
+    # ---------- 7b. run 内换行节点与引用标记共存（回归测试）----------
+    # ★ 这是自检曾经的盲区：上标切分 run 时 deepcopy 了整个 run，
+    #   把 w:br 节点一并复制到每一片，导致换行节点成倍增长。
+    #   字符数检查看不见这个问题（换行是节点结构而非字符），
+    #   所以「文字完整性」照样通过——必须单独统计换行节点数。
+    sec("7b. run 内换行节点与引用标记共存")
+    from docx.oxml.ns import qn as _qn
+    src2 = os.path.join(tmp, "换行引用.docx")
+    out2 = os.path.join(tmp, "换行引用_out.docx")
+    _d = Document()
+    _d.add_paragraph("前置段落，避免被判为文档标题。")
+    _p = _d.add_paragraph()
+    _r = _p.add_run()
+    _re = _r._element
+    for _kind, _val in [("text", "第一行文字"), ("br", None),
+                        ("text", "第二行有引用[1]"), ("br", None),
+                        ("text", "第三行结尾")]:
+        if _kind == "br":
+            _re.append(_re.makeelement(_qn("w:br"), {}))
+        else:
+            _t = _re.makeelement(_qn("w:t"), {})
+            _t.set(_qn("xml:space"), "preserve")
+            _t.text = _val
+            _re.append(_t)
+    _d.save(src2)
+
+    def _node_stats(path):
+        dd = Document(path)
+        br = chars = 0
+        for para in dd.paragraphs:
+            br += len(para._element.findall(".//" + _qn("w:br")))
+            for x in para._element.findall(".//" + _qn("w:t")):
+                chars += len(x.text or "")
+        # ★ 用 p.text 而不是 run.text：p.text 会把 w:br 映射成 \n，
+        #   所以它能反映换行结构；而把各 run.text 直接拼接会丢掉换行，
+        #   恰好掩盖了换行被破坏的问题。
+        return {"paras": len(dd.paragraphs), "br": br, "chars": chars,
+                "joined": "\n".join(p.text for p in dd.paragraphs)}
+
+    _before = _node_stats(src2)
+    rewrite(src2, out2, renumber_headings=False)
+    _after = _node_stats(out2)
+    ok("段落数不变", _before["paras"] == _after["paras"],
+       "%d -> %d" % (_before["paras"], _after["paras"]))
+    # ★ 核心断言：换行节点数必须一致。
+    #   注意不能断言「文本节点数不变」——切分本来就会把标记从原节点里分出来，
+    #   节点数增加是正常结果（这片段的运行文本拼接才是守恒量）。
+    ok("换行节点不被复制（%d -> %d）" % (_before["br"], _after["br"]),
+       _before["br"] == _after["br"], "%d -> %d" % (_before["br"], _after["br"]))
+    ok("字符数守恒", _before["chars"] == _after["chars"],
+       "%d -> %d" % (_before["chars"], _after["chars"]))
+    ok("段落文本（含换行）完全一致", _before["joined"] == _after["joined"],
+       "%r -> %r" % (_before["joined"][:44], _after["joined"][:44]))
+    # 同时确认上标确实生效了（否则上面的守恒可能只是因为根本没处理）
+    _d2 = Document(out2)
+    _sup = 0
+    for para in _d2.paragraphs:
+        for rr in para.runs:
+            rpr = rr._element.rPr
+            va = rpr.find(_qn("w:vertAlign")) if rpr is not None else None
+            if va is not None and va.get(_qn("w:val")) == "superscript":
+                _sup += 1
+    ok("引用标记确实被上标", _sup >= 1, "上标数 %d" % _sup)
+
     sec("8. 文字内容（除补写/重排的编号前缀外不得改动）")
     # 注意：这里只剥离编号前缀后比对「正文部分」。
     # 编号本身被重排是预期行为（工具功能），不算数据损坏。

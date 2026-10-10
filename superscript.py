@@ -111,49 +111,149 @@ def _split_run_at_markers(run, markers: list[tuple[int, int]]) -> list:
     如果标记和正文挤在同一个 run 里（实测「…理论突破[1]。基于…」就是一整个 run），
     只能先把 run 拆开，才能只给标记上标。
 
-    实现要点：不删原 run，而是在其后连续插入新 run，最后把原 run 清空。
-    这样能天然继承原 run 的全部格式（字体、字号、书签引用等）。
+    ★ 踩过的坑（严重）
+    ----------------
+    原实现是「deepcopy 整个 run，然后删掉所有 w:t，再塞一个新 w:t」。
+    这会把原 run 里的**其它节点（w:br / w:cr）全部复制一份**到每个新 run 里。
+    后果：一个含 2 个换行、1 个引用的 run 被切成 4 片后，换行节点变成 8 个，
+    渲染出来行数暴增（2 行正文变 10 行）。
+
+    为什么自检没抓到：字符数检查只统计 w:t 的文本长度，
+    换行是节点结构而不是字符，所以「文字完整性」检查照样通过——
+    这正是该缺陷阴险的地方。
+
+    现在的实现：只复制样式（w:rPr），按原 run 内节点的真实顺序逐段重建，
+    文本片段之间的 w:br / w:cr 原样保留且只保留一份。
     """
     from docx.text.run import Run
 
     r_el = run._element
-    parent = r_el.getparent()
     text = run.text
     if not text:
         return []
 
-    pieces = []
+    # ---- 1. 按节点真实顺序把 run 拆成「文本段」与「换行节点」----
+    segments: list[tuple[str, object]] = []      # ("t", text) 或 ("br", 元素)
     pos = 0
-    for s, e in markers:
-        if s > pos:
-            pieces.append((text[pos:s], False))
-        pieces.append((text[s:e], True))
-        pos = e
-    if pos < len(text):
-        pieces.append((text[pos:], False))
+    for child in list(r_el):
+        tag = child.tag
+        if tag == qn("w:t"):
+            s = child.text or ""
+            if s:
+                segments.append(("t", s))
+                pos += len(s)
+        elif tag == qn("w:br"):
+            # run.text 把 w:br 视作 \n，位置要同步前进
+            segments.append(("br", child))
+            text_attr = child.get(qn("w:type"))
+            if text_attr in (None, "text", "line"):
+                pos += 1
+        elif tag == qn("w:cr"):
+            segments.append(("br", child))
+            pos += 1
+        elif tag == qn("w:tab"):
+            segments.append(("t", "\t"))
+            pos += 1
 
-    if len(pieces) <= 1:
+    # ---- 2. 在每个文本段内部按标记位置再切分 ----
+    # ★ 关键：标记往往只是「一个文本节点里的一小段」。
+    #   （最常见情况：整个 run 只有一个 w:t，内容为「…突破[1]。基于…」）
+    #   若只判断「该节点是否含标记」，就会把整段都标成上标——
+    #   这是第一版修复引入的回归，被假想论文自检当场抓到。
+    pieces: list[tuple[str, bool]] = []          # ("text", 是否标记) / ("br", False)
+    char_pos = 0
+    for kind, payload in segments:
+        if kind == "br":
+            pieces.append(("br", False))
+            # ★ 必须推进 1 位：run.text 把 w:br 视作一个 \n 字符。
+            #   若这里不推进，换行之后所有文本段的区间都会少 1 位，
+            #   导致标记错位——实测表现为「'CCC' 被切成 'C' + 'CC' 且 'C' 被误标上标」。
+            char_pos += 1
+            continue
+        seg_text = payload
+        seg_start = char_pos
+        seg_end = char_pos + len(seg_text)
+        local = 0
+        for ms, me in markers:
+            s, e = max(ms, seg_start), min(me, seg_end)
+            if s >= e:
+                continue
+            ls, le = s - seg_start, e - seg_start
+            if ls > local:
+                pieces.append((seg_text[local:ls], False))
+            pieces.append((seg_text[ls:le], True))
+            local = le
+        if local < len(seg_text):
+            pieces.append((seg_text[local:], False))
+        char_pos = seg_end
+
+    text_pieces = [p for p in pieces if p[0] != "br"]
+    if not any(is_mark for _, is_mark in text_pieces):
+        return []
+    if len(text_pieces) <= 1 and len(pieces) == len(text_pieces):
         return []
 
     rpr_src = r_el.find(qn("w:rPr"))
-    new_runs = []
-    last_el = r_el
-    for piece_text, is_mark in pieces:
-        new_el = copy.deepcopy(r_el)
-        # 清掉所有文字节点，只留一个
-        for t in new_el.findall(qn("w:t")):
-            new_el.remove(t)
-        t = new_el.makeelement(qn("w:t"), {})
-        t.set(qn("xml:space"), "preserve")
-        t.text = piece_text
-        new_el.append(t)
-        last_el.addnext(new_el)
-        last_el = new_el
-        new_runs.append((Run(new_el, run._parent), is_mark))
 
-    # 原 run 置空，保持结构不变（有些文档的序号挂在原 run 上，删掉会出问题）
-    for t in r_el.findall(qn("w:t")):
-        r_el.remove(t)
+    # ---- 3. 在段落层重建整个片段序列，然后整体替换原 run ----
+    # ★ 为什么不能在原 run 后面逐个 addnext：
+    #   w:br 是 run 的**子节点**，必须包在 <w:r> 里；直接 addnext 到段落上
+    #   会让换行落到段落层（无效位置），渲染时换行消失，而节点计数却看不出。
+    #   正确做法：先把所有片段构造好，再整体替换原 run，
+    #   这样段落里的子元素顺序天然正确。
+    frags: list = []
+    new_runs: list = []
+    cur_r = None      # 当前累积的 <w:r>
+
+    def _new_run_el():
+        el = r_el.makeelement(qn("w:r"), {})
+        # 复制原 run 的非子节点属性（如 w:rsidR 之类，保住文档一致性）
+        for k, v in r_el.attrib.items():
+            el.set(k, v)
+        if rpr_src is not None:
+            el.append(copy.deepcopy(rpr_src))
+        return el
+
+    def _append_text(el, s):
+        t = el.makeelement(qn("w:t"), {})
+        t.set(qn("xml:space"), "preserve")
+        t.text = s
+        el.append(t)
+
+    for value, is_mark in pieces:
+        if value == "br":
+            if cur_r is None:
+                cur_r = _new_run_el()
+            cur_r.append(cur_r.makeelement(qn("w:br"), {}))
+            continue
+        # ★ 关键：切出来的文本里含有 \n（run.text 把 w:br 映射为换行），
+        #   但换行已经由独立的 w:br 节点承载，不能再当文本写回去。
+        #   不去掉的话会造成后续片段整体偏移一位——
+        #   实测表现为「'CCC' 被切成 'C' + 'CC'，且 'C' 被误标为上标」。
+        value = value.replace("\n", "")
+        if not value:
+            continue
+        # 上标与正文必须是不同 run（上标是 run 级属性）
+        if cur_r is None or cur_r.find(qn("w:t")) is not None:
+            if cur_r is not None:
+                frags.append((cur_r, False))
+            cur_r = _new_run_el()
+            new_runs.append((Run(cur_r, run._parent), is_mark))
+        _append_text(cur_r, value)
+    if cur_r is not None:
+        frags.append((cur_r, False))
+
+    # 收集新 run 元素（用于返回值）
+    new_els = [el for el, _ in frags]
+
+    # 整体替换原 run
+    parent = r_el.getparent()
+    idx = list(parent).index(r_el)
+    parent.remove(r_el)
+    for off, el in enumerate(new_els):
+        parent.insert(idx + off, el)
+
+    # 返回值需要与返回的 Run 对象一致（上面已 append），避免重复构造
     return new_runs
 
 
