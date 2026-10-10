@@ -1,11 +1,17 @@
 # 论文格式改写器
 
+[![自检](https://github.com/BrandonLHY/thesis-format-toolkit/actions/workflows/selftest.yml/badge.svg)](https://github.com/BrandonLHY/thesis-format-toolkit/actions/workflows/selftest.yml)
+[![许可证: GPL-3.0](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-GPL--3.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 把 Word 论文按格式规范**重新排版**：自动识别标题层级，套用字体字号，输出新文档。
 
-- **不修改原文件** —— 只读取，结果写到新文件
+**不修改原文件** —— 只读取，结果写到新文件。学生最怕把论文改坏，所以这条是底线。
+
 - **本地运行** —— 不联网、不上传任何内容
 - **格式可自定义** —— 字体字号在界面上改，不用动代码
 - **规范可替换** —— 换学校只需新增一个 JSON，程序不用改
+- **六套自检** —— 共 175 项，每次提交自动运行
 
 ---
 
@@ -248,8 +254,8 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 本项目在开发过程中使用了 **AI 编程助手（DeepSeek Harness）** 辅助实现。
 
 需求定义、产品形态设计、真实文档测试、问题定位与最终验收由作者完成。
-代码由三套自检覆盖（共 65 项），并在多份真实论文上验证——
-识别引擎的 12 项已知缺陷（见上表）均来自真实使用中暴露的问题。
+代码由**六套自检共 175 项**覆盖，并在多份真实论文上验证——
+上表列出的每一项已知缺陷，都来自真实使用中暴露的问题。
 
 ---
 
@@ -276,10 +282,10 @@ python main.py --selftest        # 11 项：依赖、GUI、端到端
 
 ## 贡献
 
-欢迎 issue 和 PR。提交前请先跑一遍三套自检：
+欢迎 issue 和 PR。提交前请先跑一遍全部自检：
 
 ```bash
-python selftest_synthetic.py && python selftest_platform.py && python main.py --selftest
+python run_all_selftests.py
 ```
 
 如果你有**识别错误的真实案例**，那是特别有价值的反馈——
