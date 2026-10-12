@@ -56,6 +56,11 @@ _exe_tmp/
 Thumbs.db
 desktop.ini
 
+# Word / WPS 打开文件时生成的锁文件（形如 ~$论文.docx、~$README.md）
+# 这个项目处理的就是 Word 文档，用户很可能用 Word 打开仓库里的 .md 或 .docx，
+# 那种情况下会凭空多出这种文件，一次 git add . 就提交进去了。
+~$*
+
 # ---------- 运行时 ----------
 .venv/
 venv/
