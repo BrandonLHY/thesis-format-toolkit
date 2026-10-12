@@ -99,8 +99,16 @@ jobs:
         if: runner.os == 'Windows'
         run: python main.py --selftest
 
+      # 上传自检报告（诊断附件）
+      #
+      # ★ continue-on-error 是必须的。实测踩过的坑：
+      #   macOS 任务里这一步报 `Failed to FinalizeArtifact: ECONNRESET`——
+      #   文件字节数与 SHA256 都已生成，只是最后一步「完成上传」的请求被网络重置。
+      #   这是 GitHub 侧的临时网络问题，与代码无关，却让整个 CI 变红、
+      #   看起来像 macOS 验证失败。附件只是排查用的诊断产物，不该有否决权。
       - name: 上传自检报告
         if: always() && runner.os == 'Windows'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: 自检报告-${{ matrix.python-version }}
@@ -108,8 +116,10 @@ jobs:
           if-no-files-found: ignore
 
       # macOS 诊断报告（真机 system_profiler 结构），失败时也上传便于排查
+      # 同上：网络问题不应让 CI 变红
       - name: 上传 macOS 诊断报告
         if: always() && runner.os == 'macOS'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: macOS诊断报告-${{ matrix.python-version }}
