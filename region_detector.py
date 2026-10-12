@@ -183,6 +183,73 @@ def parse_paragraph(p, idx: int) -> dict[str, Any]:
 # ============================================================
 HEAD_MAX_LEN = 50
 
+# 标题短句不应以句末标点结尾。这个判断在多处用到，抽出来避免各写一份。
+_SENT_END = ("。", "；", "！", "？", ".", "，", "：", "”")
+
+
+def classify_heading(p: dict, lvl, num, short: bool, t: str, norm: str,
+                     first_body_idx: int):
+    """判断一段是不是标题。是则返回 (region, conf, why)，否则返回 None。
+
+    ★ 这个函数必须同时服务于两处：正常判定，以及「前置区（摘要/目录）退出」。
+      踩过的坑（issue #1）：原先前置区退出用的是另一份 is_major()，
+      它只看了大纲级别和「≥14pt + 黑体」两种情况，是一份**不完整且不同步的副本**。
+      后果是摘要区里遇到这些标题时不认，导致标题与其后**全部正文**
+      都被当成摘要内容、套上摘要的 10.5pt 格式，而 low_confid标为 0（毫无提示）：
+
+        · 纯文字编号的一级标题（一、引言）      —— 报告者发现
+        · 阿拉伯数字编号标题（1、研究背景）      —— 补测试时发现
+        · 无编号的结构词标题（引言/结语）        —— 补测试时发现
+
+      共用一份判据，才能避免这类「副本不同步」的缺陷再出现。
+    """
+    # 信号1：大纲级别（最强，但需配合长度）
+    if p["ol"] is not None and p["ol"] != "9" and short and p["cjk_ratio"] >= 0.5:
+        r = {0: "h1", 1: "h2", 2: "h3", 3: "h3"}.get(int(p["ol"]), "h3")
+        return r, 0.9, "大纲级别 %s" % p["ol"]
+
+    # 信号2：编号模式 —— 必须排在字号判据之前
+    # ★ 踩过的坑：原先把「字号≥14pt + 黑体」放在编号之前，
+    #   结果带「（一）」前缀的二级标题被字号规则抢先判成了一级标题。
+    #   编号是作者显式标注的层级，比字号更明确，必须优先。
+    if lvl is not None and short and p["cjk_ratio"] >= 0.4 \
+            and not t.endswith(_SENT_END):
+        r = {1: "h1", 2: "h2", 3: "h3", 4: "h3"}.get(lvl, "h3")
+        return r, 0.85, "编号写法 %s" % num
+
+    # 信号3：大字号 + 居中/黑体（无编号时才作为判据）
+    if p["pt_mode"] and p["pt_mode"] >= 14.0 and short and p["cjk_ratio"] >= 0.5 \
+            and (p["ea_mode"] == "黑体" or p["jc"] == "center"):
+        return "h1", 0.8, "%.1fpt+%s" % (p["pt_mode"], p["ea_mode"] or p["jc"])
+
+    # 信号4：全段统一加粗的极短行（无编号，如「研究背景」）
+    if p["pure_format"] and p["bold_mode"] and p["len"] <= 20 \
+            and not re.search(r"[。；！？，,]$", t):
+        return "h2", 0.55, "全段加粗短行(无编号)"
+
+    # ============ B 组：纯文字信号 ============
+    # 必须独立成立。实测教训：一份文档 41 段完全没有格式信息
+    # （无字号、无字体、无加粗、无大纲级别），A 组信号全部失效，
+    # 结果所有标题和正文长得一模一样，一个标题都识别不出来。
+    # 这种「纯文本稿」必须靠编号写法与文章结构来判。
+
+    # 信号5：规范编号模式（一、/（一）/1、/（1））——不要求任何格式
+    if short and not t.endswith(_SENT_END) and p["cjk_ratio"] >= 0.4 \
+            and lvl is not None and p["len"] <= 40:
+        r = {1: "h1", 2: "h2", 3: "h3", 4: "h3"}.get(lvl, "h3")
+        return r, 0.75, "编号写法 %s（无格式辅助）" % num
+
+    # 信号6：结构词（引言/结语/结论/参考文献/致谢…）——不要求任何格式
+    if p["len"] <= 12 and norm in STRUCT_HEADINGS:
+        return "h1", 0.75, "结构词「%s」" % norm
+
+    # 信号7：文档首段且像标题 => 论文题目
+    if p["idx"] == first_body_idx and p["len"] <= 80 and lvl is None \
+            and not t.endswith(("。", "；", "！", "？")):
+        return "title", 0.7, "文档首段，判定为标题"
+
+    return None
+
 
 def detect_regions(docx_path: str) -> tuple[list[dict], dict]:
     """返回 (段落列表, 汇总)。段落的 region/conf/why 字段被就地填入。"""
@@ -325,15 +392,18 @@ def _classify(paras: list[dict]) -> None:
             p["region"], p["conf"], p["why"] = "ack", 0.9, "致谢/附录标题"
             continue
 
-        # ---- 前置区退出：遇到大标题即回正文 ----
-        def is_major(pp):
-            if pp["len"] > HEAD_MAX_LEN:
-                return False
-            if pp["ol"] == "0":
-                return True
-            return bool(pp["pt_mode"] and pp["pt_mode"] >= 14.0 and pp["ea_mode"] == "黑体")
+        # ---- 标题判定的基础量 ----
+        # 必须算在分区退出检查之前：退出判据也要用编号信息。
+        short = p["len"] <= HEAD_MAX_LEN
+        lvl, num = numbering_level(t)
 
-        if zone in ("abstract", "toc") and is_major(p):
+        # ---- 前置区退出：遇到标题即回正文 ----
+        # 用与正常判定**同一个** classify_heading，不另写一份判据。
+        # 曾经这里是一份只看「大纲级别 / ≥14pt+黑体」的副本，
+        # 导致纯文字编号标题与结构词标题漏判（issue #1）。
+        # 「title」不算退出信号：它只可能是文档首段，出现在前置区之前。
+        _h = classify_heading(p, lvl, num, short, t, norm, first_body_idx)
+        if zone in ("abstract", "toc") and _h is not None and _h[0] != "title":
             zone = "body"
 
         # ---- 图表题注 ----
@@ -359,61 +429,12 @@ def _classify(paras: list[dict]) -> None:
             continue
 
         # ---- 标题判定 ----
-        short = p["len"] <= HEAD_MAX_LEN
-        lvl, num = numbering_level(t)
-
-        # ============ A 组：结构信号（最可靠）============
-        # 信号1：大纲级别（最强，但需配合长度）
-        if p["ol"] is not None and p["ol"] != "9" and short and p["cjk_ratio"] >= 0.5:
-            r = {0: "h1", 1: "h2", 2: "h3", 3: "h3"}.get(int(p["ol"]), "h3")
-            p["region"], p["conf"], p["why"] = r, 0.9, "大纲级别 %s" % p["ol"]
-            continue
-
-        # 信号2：编号模式 —— 必须排在字号判据之前
-        # ★ 踩过的坑：原先把「字号≥14pt + 黑体」放在编号之前，
-        #   结果带「（一）」前缀的二级标题被字号规则抢先判成了一级标题。
-        #   编号是作者显式标注的层级，比字号更明确，必须优先。
-        if lvl is not None and short and p["cjk_ratio"] >= 0.4 \
-                and not t.endswith(("。", "；", "！", "？", ".", "，", "：", "”")):
-            r = {1: "h1", 2: "h2", 3: "h3", 4: "h3"}.get(lvl, "h3")
-            p["region"], p["conf"], p["why"] = r, 0.85, "编号写法 %s" % num
-            continue
-
-        # 信号3：大字号 + 居中/黑体（无编号时才作为判据）
-        if p["pt_mode"] and p["pt_mode"] >= 14.0 and short and p["cjk_ratio"] >= 0.5 \
-                and (p["ea_mode"] == "黑体" or p["jc"] == "center"):
-            p["region"], p["conf"], p["why"] = "h1", 0.8, "%.1fpt+%s" % (p["pt_mode"], p["ea_mode"] or p["jc"])
-            continue
-        # 信号4：全段统一加粗的极短行（无编号，如「研究背景」）
-        if p["pure_format"] and p["bold_mode"] and p["len"] <= 20 \
-                and not re.search(r"[。；！？，,]$", t):
-            p["region"], p["conf"], p["why"] = "h2", 0.55, "全段加粗短行(无编号)"
-            continue
-
-        # ============ B 组：纯文字信号 ============
-        # 必须独立成立。实测教训：一份文档 41 段完全没有格式信息
-        # （无字号、无字体、无加粗、无大纲级别），A 组信号全部失效，
-        # 结果所有标题和正文长得一模一样，一个标题都识别不出来。
-        # 这种「纯文本稿」必须靠编号写法与文章结构来判。
-        is_head_like = (
-            short
-            and not t.endswith(("。", "；", "！", "？", ".", "，", "：", "”"))
-            and p["cjk_ratio"] >= 0.4
-        )
-
-        # 信号5：规范编号模式（一、/（一）/1、/（1））——不要求任何格式
-        if is_head_like and lvl is not None and p["len"] <= 40:
-            r = {1: "h1", 2: "h2", 3: "h3", 4: "h3"}.get(lvl, "h3")
-            p["region"], p["conf"], p["why"] = r, 0.75, "编号写法 %s（无格式辅助）" % num
-            continue
-        # 信号6：结构词（引言/结语/结论/参考文献/致谢…）——不要求任何格式
-        if p["len"] <= 12 and norm in STRUCT_HEADINGS:
-            p["region"], p["conf"], p["why"] = "h1", 0.75, "结构词「%s」" % norm
-            continue
-        # 信号7：文档首段且像标题 => 论文题目
-        if p["idx"] == first_body_idx and p["len"] <= 80 and lvl is None \
-                and not t.endswith(("。", "；", "！", "？")):
-            p["region"], p["conf"], p["why"] = "title", 0.7, "文档首段，判定为标题"
+        # 与上面「前置区退出」共用同一个 classify_heading，不另写判据。
+        # 信号顺序：1 大纲级别 → 2 编号 → 3 大字号 → 4 加粗短行 →
+        #          5 编号（无格式辅助）→ 6 结构词 → 7 文档首段
+        _h = classify_heading(p, lvl, num, short, t, norm, first_body_idx)
+        if _h is not None:
+            p["region"], p["conf"], p["why"] = _h
             continue
 
         # ---- 默认正文 ----

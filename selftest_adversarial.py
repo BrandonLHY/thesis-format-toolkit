@@ -423,6 +423,126 @@ def main() -> int:
                 overwritten.append(name)
     ok("输入输出不是同一文件", not overwritten, str(overwritten))
 
+    # ---------- 8. 前置区退出条件 ----------
+    # ★ 回归测试（issue #1）：摘要/目录区遇到「只有文字编号、没有大纲级别、
+    #   也没有黑体大字号」的标题时，必须结束前置区回到正文。
+    #   旧逻辑只认大纲级别和「≥14pt + 黑体」，于是「一、引言」和它后面的
+    #   正文全被当成摘要内容，套用了摘要的 10.5pt 格式，
+    #   而且 low_confidence 为 0——完全没有任何提示。
+    sec("8. 前置区退出：各种标题信号都要能结束摘要/目录区")
+
+    def zone_exit_case(label, paras, heading_idx, body_idx):
+        """构造文档，检查 heading_idx 是否被判为标题、body_idx 是否为正文。"""
+        src = os.path.join(tmp, "区退出_%s.docx" % label)
+        out = os.path.join(tmp, "区退出_%s_out.docx" % label)
+        d = Document()
+        for text, kw in paras:
+            p = d.add_paragraph()
+            if kw:
+                add_run(p, text, **kw)
+            else:
+                p.add_run(text)
+        d.save(src)
+        info, _ = detect_regions(src)
+        regions = [x["region"] for x in info]
+        h = regions[heading_idx] if heading_idx < len(regions) else "?"
+        b = regions[body_idx] if body_idx < len(regions) else "?"
+        # 这里只要求「被识别为标题」——具体是 h1/h2/h3 取决于编号层级
+        # （一、=1 级、（一）=2 级、1、=3 级，按规范体系），不是本测试的关注点。
+        ok("%s：应被识别为标题（实际 %s）" % (label, h),
+           h in ("h1", "h2", "h3"), "整段区域 %s" % regions)
+        ok("%s：其后正文应为 body（实际 %s）" % (label, b),
+           b == "body", "整段区域 %s" % regions)
+
+    # 各种可能的「正文开始」信号，都要能把摘要区关掉
+    zone_exit_case(
+        "纯文字编号一级标题",
+        [("测试论文题目", None), ("摘要", None),
+         ("本文研究人工智能。", None), ("关键词：人工智能", None),
+         ("一、引言", None), ("这是正文内容。", None)],
+        4, 5)
+    zone_exit_case(
+        "纯文字编号二级标题",
+        [("测试论文题目", None), ("摘要", None),
+         ("本文研究人工智能。", None),
+         ("（一）研究背景", None), ("这是正文内容。", None)],
+        3, 4)
+    zone_exit_case(
+        "阿拉伯数字编号标题",
+        [("测试论文题目", None), ("摘要", None),
+         ("本文研究人工智能。", None),
+         ("1、研究背景", None), ("这是正文内容。", None)],
+        3, 4)
+    zone_exit_case(
+        "无编号结构词标题",
+        [("测试论文题目", None), ("摘要", None),
+         ("本文研究人工智能。", None),
+         ("结语", None), ("这是正文内容。", None)],
+        3, 4)
+    zone_exit_case(
+        "目录区遇编号标题也要退出",
+        [("测试论文题目", None), ("目录", None),
+         ("第一章 绪论 ......... 1", None),
+         ("一、引言", None), ("这是正文内容。", None)],
+        3, 4)
+
+    # 反例：摘要区的正常内容不应被误判成标题
+    src_neg = os.path.join(tmp, "区退出_反例.docx")
+    d_neg = Document()
+    for text in ["测试论文题目", "摘要",
+                 "本文研究人工智能在金融领域的应用。",
+                 "研究方法采用定量分析。",
+                 "关键词：人工智能；金融"]:
+        d_neg.add_paragraph(text)
+    d_neg.save(src_neg)
+    info_neg, _ = detect_regions(src_neg)
+    regs_neg = [x["region"] for x in info_neg]
+    ok("摘要区内的连续正文仍判为 abstract（不被误判成标题）",
+       regs_neg.count("abstract") == 2,
+       "区域序列 %s" % regs_neg)
+    ok("关键词仍判为 keywords", "keywords" in regs_neg, "区域序列 %s" % regs_neg)
+
+    # ---------- 9. 体检引擎的分区行为 ----------
+    # ★ audit_engine.py 原先**完全没有测试覆盖**，而它与改写引擎各有一份
+    #   分区逻辑。issue #1 报告的是改写引擎的缺陷，体检引擎有同款问题：
+    #   摘要区里的纯文字编号标题不被认作标题，分区无法退出，
+    #   标题与其后全部正文都被归入摘要内容，体检查出的问题全是错的。
+    sec("9. 体检引擎：摘要区必须能被标题打断")
+    try:
+        import json as _json
+        from audit_engine import parse_para as _parse_para, classify as _classify, audit as _audit
+
+        spec_path = os.path.join(HERE, "specs", "sysu_undergraduate_thesis.json")
+        with open(spec_path, encoding="utf-8") as f:
+            _spec = _json.load(f)
+
+        src_a = os.path.join(tmp, "体检分区.docx")
+        d_a = Document()
+        for _t in ["测试论文题目", "摘要", "本文研究人工智能在金融领域的应用。",
+                   "关键词：人工智能；金融", "一、引言", "这是应按正文排版的内容。"]:
+            d_a.add_paragraph(_t)
+        d_a.save(src_a)
+
+        d_b = Document(src_a)
+        _paras = [_parse_para(x, i) for i, x in enumerate(d_b.paragraphs)]
+        _classify(_paras, _spec)
+        _cats = [x["cat"] for x in _paras if not x["empty"]]
+        ok("体检引擎：摘要正文仍判为摘要内容",
+           _cats.count("中文摘要内容") == 1, "类别序列 %s" % _cats)
+        ok("体检引擎：「一、引言」不再被判为摘要内容",
+           _cats[4] != "中文摘要内容", "类别序列 %s" % _cats)
+        ok("体检引擎：标题后正文不再被判为摘要内容",
+           _cats[5] != "中文摘要内容", "类别序列 %s" % _cats)
+
+        # 冒烟测试：audit() 能正常跑完（这个模块原先一条测试都没有）
+        _res = _audit(src_a, _spec)
+        ok("体检引擎 audit() 正常返回", isinstance(_res, dict) and "paragraphs" in _res,
+           "返回键 %s" % sorted(_res.keys())[:6] if isinstance(_res, dict) else repr(_res))
+    except ImportError as e:
+        ok("体检引擎可导入", False, str(e))
+    except Exception as e:
+        ok("体检引擎测试未抛异常", False, "%s: %s" % (type(e).__name__, e))
+
     sec("结果")
     print("  通过 %d 项，失败 %d 项" % (PASS, FAIL))
     if FAILURES:

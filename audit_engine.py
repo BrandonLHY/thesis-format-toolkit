@@ -34,6 +34,13 @@ from typing import Any
 
 from docx import Document
 
+# 标题判据与改写引擎共用同一份实现。
+# ★ 为什么必须共用：原先体检引擎自己写了一份更窄的副本，只认 outlineLvl 与
+#   「≥14pt + 黑体」，于是摘要区里的纯文字编号标题（一、引言）不被认作标题，
+#   分区无法退出，标题与其后全部正文都被归入摘要内容——体检查出的问题全是错的。
+#   （issue #1 报的是改写引擎的同款缺陷，体检引擎有同样的问题。）
+from region_detector import classify_heading
+
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 # ============================================================
@@ -272,18 +279,21 @@ def classify(paras: list[dict], spec: dict) -> None:
             p["cat"], p["conf"], p["why"] = "致谢附录标题", 0.9, "归一化文本=致谢/附录"
             continue
 
-        # ---------- 分区退出：前置部分必须能被「大标题」打断 ----------
+        # ---------- 分区退出：前置部分必须能被标题打断 ----------
         # 缺少这段退出逻辑会导致摘要区一路吞掉全文（实测把 88 段正文误判为摘要内容）。
-        def is_major_heading(pp):
-            if pp["len"] > 50:
-                return False
-            if pp["ol"] == "0":
-                return True
-            if pp["pt_mode"] and pp["pt_mode"] >= 14.0 and pp["ea_mode"] == "黑体":
-                return True
-            return False
-
-        if zone in ("abstract", "toc") and is_major_heading(p):
+        #
+        # ★ 这里复用 region_detector 的 classify_heading，不再自己写一份判据。
+        #   踩过的坑（issue #1）：原先这里是一份独立且更窄的副本
+        #   （只看 outlineLvl 与「≥14pt + 黑体」），于是摘要区里遇到
+        #   「一、引言」这类只有文字编号的标题时不认，标题和其后**全部正文**
+        #   都被归入摘要内容，体检查出的问题也就全是错的。
+        #   改写引擎与体检引擎必须共用同一份标题判据，否则两者会各自漂移。
+        #   （first_body_idx 传 -1：本函数没有「文档首段即标题」这条信号，
+        #     而返回 title 的情况本来也不作为退出信号。）
+        lvl_for_exit, num_for_exit = numbering_level(t)
+        _h = classify_heading(p, lvl_for_exit, num_for_exit, p["len"] <= 50,
+                              t, p["norm"], -1)
+        if zone in ("abstract", "toc") and _h is not None and _h[0] != "title":
             zone = "body"
 
         # ---------- 图表题注 ----------
